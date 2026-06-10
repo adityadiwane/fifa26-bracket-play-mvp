@@ -1,0 +1,13 @@
+name = "fifa26-bracket-play-api"
+main = "src/index.ts"
+compatibility_date = "2025-08-01"
+
+[vars]
+CORS_ALLOWED_ORIGIN = "*"
+
+# Replace database_id after creating D1:
+# wrangler d1 create fifa26-bracket-play-db
+[[d1_databases]]
+binding = "DB"
+database_name = "fifa26-bracket-play-db"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"

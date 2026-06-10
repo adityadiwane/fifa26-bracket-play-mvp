@@ -1,0 +1,5 @@
+fifa_match_no,stage,group_name,home_team,away_team,home_placeholder,away_placeholder,kickoff_at,venue
+1,GROUP,A,Mexico,South Africa,,,2026-06-11T19:00:00Z,Estadio Azteca
+2,GROUP,A,Canada,Qualifier A,,,2026-06-12T00:00:00Z,BMO Field
+3,GROUP,B,USA,Qualifier B,,,2026-06-12T23:00:00Z,SoFi Stadium
+81,ROUND_OF_32,, , ,Winner Group A,Runner-up Group B,2026-06-28T19:00:00Z,TBD
