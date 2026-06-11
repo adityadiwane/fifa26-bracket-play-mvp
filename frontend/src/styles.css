@@ -43,6 +43,23 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .hero-card h1,
 .hero-card .muted { display: none; }
 .panel { padding: 24px; }
+.auth-page .panel::before {
+  content: "Simple friends-only pool\A Pick the winner. Track the leaderboard.\A No score predictions. Group games allow draw picks. Knockout games allow either team advancing.";
+  display: block;
+  white-space: pre-line;
+  color: #66758c;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin-bottom: 18px;
+}
+.auth-page .panel::first-line {
+  color: #57708f;
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
 .panel.wide { max-width: 1000px; margin: 0 auto; }
 
 .app-shell { max-width: 1120px; margin: 0 auto; padding: 24px; }
