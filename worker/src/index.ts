@@ -90,6 +90,14 @@ async function createLeague(request: Request, env: Env): Promise<Response> {
   if (!name) throw new AppError('League name is required.', 400);
   if (!adminPin || adminPin.length < 4) throw new AppError('Admin PIN must be at least 4 characters.', 400);
 
+  const existingLeague = await env.DB.prepare(
+    `SELECT id FROM leagues WHERE lower(trim(name)) = lower(trim(?)) LIMIT 1`
+  ).bind(name).first<{ id: string }>();
+
+  if (existingLeague) {
+    throw new AppError('League name already exists.', 409);
+  }
+
   const id = makeId('lg');
   const inviteCode = makeInviteCode();
   const adminPinHash = await hashPin(adminPin, env);
@@ -153,7 +161,7 @@ async function loginUser(request: Request, env: Env): Promise<Response> {
   ).bind(league.id, displayName).first<{ id: string; display_name: string; user_pin_hash: string }>();
 
   if (!user) {
-    throw new AppError('Invalid display name.', 422);
+    throw new AppError('Invalid Display Name', 422);
   }
 
   if (user.user_pin_hash !== await hashPin(pin, env)) {
