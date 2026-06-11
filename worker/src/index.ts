@@ -152,7 +152,11 @@ async function loginUser(request: Request, env: Env): Promise<Response> {
     `SELECT id, display_name, user_pin_hash FROM users WHERE league_id = ? AND lower(display_name) = lower(?)`
   ).bind(league.id, displayName).first<{ id: string; display_name: string; user_pin_hash: string }>();
 
-  if (!user || user.user_pin_hash !== await hashPin(pin, env)) {
+  if (!user) {
+    throw new AppError('Invalid display name.', 422);
+  }
+
+  if (user.user_pin_hash !== await hashPin(pin, env)) {
     throw new AppError('Invalid display name or PIN.', 401);
   }
 
