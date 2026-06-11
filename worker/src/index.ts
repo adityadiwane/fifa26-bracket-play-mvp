@@ -214,7 +214,11 @@ async function listMyPredictions(request: Request, env: Env, leagueId: string): 
 
   const { results } = await env.DB.prepare(
     `SELECT p.match_id, p.predicted_outcome, p.created_at, p.updated_at,
-            CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 3 ELSE 0 END AS points_awarded
+            CASE
+              WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
+              WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
+              ELSE 0
+            END AS points_awarded
        FROM predictions p
        JOIN matches m ON m.id = p.match_id
       WHERE p.league_id = ? AND p.user_id = ?`
@@ -270,7 +274,11 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
   const { results } = await env.DB.prepare(
     `SELECT u.id AS user_id,
             u.display_name,
-            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 3 ELSE 0 END), 0) AS total_points,
+            COALESCE(SUM(CASE
+              WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
+              WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
+              ELSE 0
+            END), 0) AS total_points,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL AND p.predicted_outcome != m.actual_outcome THEN 1 ELSE 0 END), 0) AS wrong_picks,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed_picks
