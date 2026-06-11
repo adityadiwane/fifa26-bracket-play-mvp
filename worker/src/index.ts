@@ -75,10 +75,9 @@ export default {
 
       return fail('Not found', env, 404);
     } catch (err) {
-      const message = err instanceof AppError ? err.message : 'Unexpected server error';
-      const status = err instanceof AppError ? err.status : 500;
+      const appError = normalizeAppError(err);
       console.error(err);
-      return fail(message, env, status);
+      return fail(appError.message, env, appError.status);
     }
   },
 };
@@ -434,10 +433,25 @@ function corsResponse(body: BodyInit | null, env: Env, status = 200): Response {
   });
 }
 
+function normalizeAppError(err: unknown): { message: string; status: number } {
+  if (err instanceof AppError) return { message: err.message, status: err.status };
+
+  if (err instanceof Error && 'status' in err) {
+    const status = Number((err as { status?: unknown }).status);
+    if (Number.isInteger(status) && status >= 400 && status <= 599) {
+      return { message: err.message, status };
+    }
+  }
+
+  return { message: 'Unexpected server error', status: 500 };
+}
+
 class AppError extends Error {
   status: number;
   constructor(message: string, status: number) {
     super(message);
+    this.name = 'AppError';
     this.status = status;
+    Object.setPrototypeOf(this, AppError.prototype);
   }
 }
