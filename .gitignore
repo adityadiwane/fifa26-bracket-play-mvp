@@ -6,3 +6,4 @@ dist/
 *.sqlite
 *.log
 .DS_Store
+frontend/.env.local

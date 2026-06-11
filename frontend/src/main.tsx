@@ -423,7 +423,11 @@ function loadSession(): SessionState | null {
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, {
-    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZoneName: 'short'
   }).format(new Date(value));
 }
 
