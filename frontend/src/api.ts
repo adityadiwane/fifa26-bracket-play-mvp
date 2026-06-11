@@ -32,10 +32,16 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   const data = text ? safeJsonParse(text) : {};
 
   if (!response.ok) {
-    throw new ApiError(data.error || `Request failed: ${response.status}`, response.status);
+    throw new ApiError(getApiErrorMessage(data.error, response.status), response.status);
   }
 
   return data as T;
+}
+
+function getApiErrorMessage(error: unknown, status: number): string {
+  const message = typeof error === 'string' ? error : '';
+  if (status === 422 && message.toLowerCase().includes('display name')) return 'Invalid Display Name';
+  return message || `Request failed: ${status}`;
 }
 
 function safeJsonParse(text: string): any {
