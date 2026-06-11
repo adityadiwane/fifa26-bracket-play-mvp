@@ -6,7 +6,7 @@ Users do **not** predict scores. They select the match outcome only:
 
 - Group stage: home win, draw, away win
 - Knockout stage: home team advances or away team advances
-- Scoring: 3 points for each correct pick
+- Scoring: 2 points for a correct winner pick, 2.5 points for a correct draw pick, 0 points for wrong picks
 
 This implements the simplified version of the Cloudflare Pages + Worker + D1 approach from the design document.
 
