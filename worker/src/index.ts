@@ -29,43 +29,43 @@ export default {
       }
 
       if (request.method === 'POST' && path === '/api/leagues') {
-        return createLeague(request, env);
+        return await createLeague(request, env);
       }
 
       if (request.method === 'POST' && path === '/api/join') {
-        return joinLeague(request, env);
+        return await joinLeague(request, env);
       }
 
       if (request.method === 'POST' && path === '/api/login') {
-        return loginUser(request, env);
+        return await loginUser(request, env);
       }
 
       if (request.method === 'POST' && path === '/api/admin/login') {
-        return loginAdmin(request, env);
+        return await loginAdmin(request, env);
       }
 
       const leagueMatches = path.match(/^\/api\/league\/([^/]+)\/matches$/);
       if (request.method === 'GET' && leagueMatches) {
-        return listMatches(request, env, leagueMatches[1]);
+        return await listMatches(request, env, leagueMatches[1]);
       }
 
       const myPredictions = path.match(/^\/api\/league\/([^/]+)\/predictions\/me$/);
       if (request.method === 'GET' && myPredictions) {
-        return listMyPredictions(request, env, myPredictions[1]);
+        return await listMyPredictions(request, env, myPredictions[1]);
       }
 
       if (request.method === 'POST' && path === '/api/predictions') {
-        return savePrediction(request, env);
+        return await savePrediction(request, env);
       }
 
       const leaderboard = path.match(/^\/api\/league\/([^/]+)\/leaderboard$/);
       if (request.method === 'GET' && leaderboard) {
-        return getLeaderboard(request, env, leaderboard[1]);
+        return await getLeaderboard(request, env, leaderboard[1]);
       }
 
       const adminResult = path.match(/^\/api\/admin\/matches\/([^/]+)\/result$/);
       if (request.method === 'POST' && adminResult) {
-        return updateMatchResult(request, env, adminResult[1]);
+        return await updateMatchResult(request, env, adminResult[1]);
       }
 
       if (request.method === 'POST' && path === '/api/admin/recalculate') {
