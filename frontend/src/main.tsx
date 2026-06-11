@@ -130,6 +130,7 @@ function PredictionsPage({ session }: { session: SessionState }) {
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Record<string, Prediction>>({});
   const [filter, setFilter] = useState<'all' | 'open' | 'completed'>('all');
+  const [selectedDate, setSelectedDate] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -164,13 +165,34 @@ function PredictionsPage({ session }: { session: SessionState }) {
     }
   }
 
+  const dateOptions = useMemo(() => {
+    const uniqueDates = new Map<string, string>();
+    for (const match of matches) {
+      const key = getLocalDateKey(match.kickoff_at);
+      if (!uniqueDates.has(key)) uniqueDates.set(key, formatDateOption(match.kickoff_at));
+    }
+    return Array.from(uniqueDates, ([value, label]) => ({ value, label }));
+  }, [matches]);
+
+  useEffect(() => {
+    if (dateOptions.length === 0) {
+      setSelectedDate('');
+      return;
+    }
+
+    if (!selectedDate || !dateOptions.some((date) => date.value === selectedDate)) {
+      setSelectedDate(dateOptions[0].value);
+    }
+  }, [dateOptions, selectedDate]);
+
   const visibleMatches = useMemo(() => {
     return matches.filter((match) => {
+      if (selectedDate && getLocalDateKey(match.kickoff_at) !== selectedDate) return false;
       if (filter === 'open') return !match.is_locked && match.status !== 'COMPLETED';
       if (filter === 'completed') return match.status === 'COMPLETED';
       return true;
     });
-  }, [matches, filter]);
+  }, [matches, filter, selectedDate]);
 
   if (loading) return <Loading />;
 
@@ -181,10 +203,17 @@ function PredictionsPage({ session }: { session: SessionState }) {
           <p className="eyebrow">Match picks</p>
           <h2>Your predictions</h2>
         </div>
-        <div className="segmented">
-          <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button>
-          <button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button>
-          <button className={filter === 'completed' ? 'active' : ''} onClick={() => setFilter('completed')}>Completed</button>
+        <div className="prediction-controls">
+          <label className="date-picker">Match date
+            <select value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} disabled={dateOptions.length === 0}>
+              {dateOptions.map((date) => <option key={date.value} value={date.value}>{date.label}</option>)}
+            </select>
+          </label>
+          <div className="segmented">
+            <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>All</button>
+            <button className={filter === 'open' ? 'active' : ''} onClick={() => setFilter('open')}>Open</button>
+            <button className={filter === 'completed' ? 'active' : ''} onClick={() => setFilter('completed')}>Completed</button>
+          </div>
         </div>
       </div>
 
@@ -200,7 +229,7 @@ function PredictionsPage({ session }: { session: SessionState }) {
             onPick={(outcome) => pick(match, outcome)}
           />
         ))}
-        {visibleMatches.length === 0 && <div className="empty">No matches found for this filter.</div>}
+        {visibleMatches.length === 0 && <div className="empty">No matches found for this date and filter.</div>}
       </div>
     </section>
   );
@@ -428,6 +457,22 @@ function formatDate(value: string) {
     hour: 'numeric',
     minute: '2-digit',
     timeZoneName: 'short'
+  }).format(new Date(value));
+}
+
+function getLocalDateKey(value: string) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateOption(value: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
   }).format(new Date(value));
 }
 
