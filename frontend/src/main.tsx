@@ -18,8 +18,8 @@ import './styles.css';
 const STORAGE_KEY = 'fifa26.session.v1';
 const JOIN_PIN_PLACEHOLDER = 'Create your PIN. Remember it. No option to reset it yet';
 const LOGIN_PIN_PLACEHOLDER = 'Enter your PIN';
-const PIN_PLACEHOLDER_BASE_FONT_SIZE = 16;
-const PIN_PLACEHOLDER_MIN_FONT_SIZE = 8;
+const PLACEHOLDER_BASE_FONT_SIZE = 16;
+const PLACEHOLDER_MIN_FONT_SIZE = 8;
 
 function App() {
   const [session, setSession] = useState<SessionState | null>(() => loadSession());
@@ -67,49 +67,6 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
   const [inviteCode, setInviteCode] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [pin, setPin] = useState('');
-  const pinInputRef = useRef<HTMLInputElement>(null);
-  const [pinPlaceholderFontSize, setPinPlaceholderFontSize] = useState(PIN_PLACEHOLDER_BASE_FONT_SIZE);
-  const pinPlaceholder = mode === 'join' ? JOIN_PIN_PLACEHOLDER : LOGIN_PIN_PLACEHOLDER;
-
-  useEffect(() => {
-    if (mode === 'create') return;
-
-    const input = pinInputRef.current;
-    if (!input) return;
-
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    const resizePlaceholder = () => {
-      const styles = window.getComputedStyle(input);
-      const horizontalPadding = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
-      const availableWidth = input.clientWidth - horizontalPadding - 4;
-      if (availableWidth <= 0) return;
-
-      context.font = `${styles.fontWeight} ${PIN_PLACEHOLDER_BASE_FONT_SIZE}px ${styles.fontFamily}`;
-      const textWidth = context.measureText(pinPlaceholder).width;
-
-      if (textWidth <= availableWidth) {
-        setPinPlaceholderFontSize(PIN_PLACEHOLDER_BASE_FONT_SIZE);
-        return;
-      }
-
-      const scaledSize = Math.floor((availableWidth / textWidth) * PIN_PLACEHOLDER_BASE_FONT_SIZE);
-      setPinPlaceholderFontSize(Math.max(PIN_PLACEHOLDER_MIN_FONT_SIZE, scaledSize));
-    };
-
-    resizePlaceholder();
-
-    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resizePlaceholder) : null;
-    observer?.observe(input);
-    window.addEventListener('resize', resizePlaceholder);
-
-    return () => {
-      observer?.disconnect();
-      window.removeEventListener('resize', resizePlaceholder);
-    };
-  }, [mode, pinPlaceholder]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -139,6 +96,10 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
     }
   }
 
+  const inviteCodePlaceholder = mode === 'join' ? 'Enter invite code from the league admin' : 'Enter your invite code';
+  const displayNamePlaceholder = mode === 'join' ? 'Create your display name' : 'Enter your display name';
+  const pinPlaceholder = mode === 'join' ? JOIN_PIN_PLACEHOLDER : LOGIN_PIN_PLACEHOLDER;
+
   return (
     <main className="auth-page">
       <section className="hero-card">
@@ -156,14 +117,14 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
 
         {mode === 'create' ? (
           <>
-            <label>League name<input value={leagueName} onChange={(e) => setLeagueName(e.target.value)} required /></label>
-            <label>Admin PIN<input type="password" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} minLength={4} required /></label>
+            <label>League name<AutoResizeInput value={leagueName} onChange={(e) => setLeagueName(e.target.value)} placeholder="Name your league or pool" required /></label>
+            <label>Admin PIN<AutoResizeInput type="password" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} placeholder="Create admin PIN. Remember it. No option to reset it yet" minLength={4} required /></label>
           </>
         ) : (
           <>
-            <label>Invite code<input value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} required /></label>
-            <label>Display name<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required /></label>
-            <label>PIN<input ref={pinInputRef} type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder={pinPlaceholder} style={pin ? undefined : { fontSize: `${pinPlaceholderFontSize}px` }} minLength={4} required /></label>
+            <label>Invite code<AutoResizeInput value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} placeholder={inviteCodePlaceholder} required /></label>
+            <label>Display name<AutoResizeInput value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={displayNamePlaceholder} required /></label>
+            <label>PIN<AutoResizeInput type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder={pinPlaceholder} minLength={4} required /></label>
           </>
         )}
 
@@ -452,7 +413,7 @@ function AdminPage({ session, onSession }: { session: SessionState; onSession: (
       <form className="panel" onSubmit={login}>
         <p className="eyebrow">Admin</p>
         <h2>Admin login</h2>
-        <label>Admin PIN<input type="password" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} minLength={4} /></label>
+        <label>Admin PIN<AutoResizeInput type="password" value={adminPin} onChange={(e) => setAdminPin(e.target.value)} placeholder="Enter admin PIN" minLength={4} /></label>
         <button className="primary">Unlock admin</button>
       </form>
 
@@ -482,6 +443,60 @@ function AdminPage({ session, onSession }: { session: SessionState; onSession: (
       {message && <div className="success">{message}</div>}
       {error && <div className="error">{error}</div>}
     </section>
+  );
+}
+
+function AutoResizeInput({ style, placeholder, value, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { placeholder: string }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [placeholderFontSize, setPlaceholderFontSize] = useState(PLACEHOLDER_BASE_FONT_SIZE);
+  const hasValue = value !== undefined && value !== null && String(value).length > 0;
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const resizePlaceholder = () => {
+      const styles = window.getComputedStyle(input);
+      const horizontalPadding = parseFloat(styles.paddingLeft) + parseFloat(styles.paddingRight);
+      const availableWidth = input.clientWidth - horizontalPadding - 4;
+      if (availableWidth <= 0) return;
+
+      context.font = `${styles.fontWeight} ${PLACEHOLDER_BASE_FONT_SIZE}px ${styles.fontFamily}`;
+      const textWidth = context.measureText(placeholder).width;
+
+      if (textWidth <= availableWidth) {
+        setPlaceholderFontSize(PLACEHOLDER_BASE_FONT_SIZE);
+        return;
+      }
+
+      const scaledSize = Math.floor((availableWidth / textWidth) * PLACEHOLDER_BASE_FONT_SIZE);
+      setPlaceholderFontSize(Math.max(PLACEHOLDER_MIN_FONT_SIZE, scaledSize));
+    };
+
+    resizePlaceholder();
+
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resizePlaceholder) : null;
+    observer?.observe(input);
+    window.addEventListener('resize', resizePlaceholder);
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', resizePlaceholder);
+    };
+  }, [placeholder]);
+
+  return (
+    <input
+      {...props}
+      ref={inputRef}
+      value={value}
+      placeholder={placeholder}
+      style={{ ...style, ...(hasValue ? {} : { fontSize: `${placeholderFontSize}px` }) }}
+    />
   );
 }
 
