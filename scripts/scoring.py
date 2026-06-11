@@ -16,7 +16,8 @@ class Outcome(StrEnum):
     AWAY_WIN = "AWAY_WIN"
 
 
-CORRECT_PICK_POINTS = 3
+CORRECT_WINNER_POINTS = 2
+CORRECT_DRAW_POINTS = 2.5
 
 
 @dataclass(frozen=True)
@@ -26,8 +27,8 @@ class MatchPrediction:
     actual_outcome: Outcome | None
 
 
-def calculate_match_points(predicted_outcome: Outcome | str | None, actual_outcome: Outcome | str | None) -> int:
-    """Return 3 points for a correct pick, otherwise 0."""
+def calculate_match_points(predicted_outcome: Outcome | str | None, actual_outcome: Outcome | str | None) -> float:
+    """Return points for a prediction under the current scoring rules."""
     if not predicted_outcome or not actual_outcome:
         return 0
 
@@ -37,7 +38,10 @@ def calculate_match_points(predicted_outcome: Outcome | str | None, actual_outco
     except ValueError:
         return 0
 
-    return CORRECT_PICK_POINTS if predicted == actual else 0
+    if predicted != actual:
+        return 0
+
+    return CORRECT_DRAW_POINTS if actual == Outcome.DRAW else CORRECT_WINNER_POINTS
 
 
 def is_outcome_allowed(stage: str, outcome: Outcome | str) -> bool:
