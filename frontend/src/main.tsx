@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   adminLogin,
+  ApiError,
   createLeague,
   getLeaderboard,
   getMatches,
@@ -85,7 +86,7 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
         onSession(loggedIn);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong.');
+      setError(getAuthErrorMessage(mode, err));
     } finally {
       setLoading(false);
     }
@@ -448,6 +449,20 @@ function loadSession(): SessionState | null {
   } catch {
     return null;
   }
+}
+
+function getAuthErrorMessage(mode: 'join' | 'login' | 'create', err: unknown) {
+  if (mode === 'join' && err instanceof ApiError) {
+    if (err.status === 404) return 'Invalid Invite Code';
+    if (err.status === 409) return 'User Already Exists';
+  }
+
+  if (mode === 'login' && err instanceof ApiError) {
+    if (err.status === 404) return 'Invalid Invite Code';
+    if (err.status === 401) return 'Invalid PIN';
+  }
+
+  return err instanceof Error ? err.message : 'Something went wrong.';
 }
 
 function formatDate(value: string) {
