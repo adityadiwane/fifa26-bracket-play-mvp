@@ -79,6 +79,8 @@ CREATE TABLE IF NOT EXISTS admin_audit_log (
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_league ON users(league_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_league_display_name_normalized
+  ON users(league_id, lower(trim(display_name)));
 CREATE INDEX IF NOT EXISTS idx_matches_kickoff ON matches(kickoff_at);
 CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(league_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_match ON predictions(league_id, match_id);
