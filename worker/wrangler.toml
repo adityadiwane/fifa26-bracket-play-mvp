@@ -3,7 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-08-01"
 
 [vars]
-CORS_ALLOWED_ORIGIN = "*"
+CORS_ALLOWED_ORIGIN = "https://fifa26-bracket-play-mvp.fifa26.workers.dev"
 
 # Replace database_id after creating D1:
 # wrangler d1 create fifa26-bracket-play-db
