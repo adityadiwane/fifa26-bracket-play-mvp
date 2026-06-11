@@ -116,7 +116,7 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
           <>
             <label>Invite code<input value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} required /></label>
             <label>Display name<input value={displayName} onChange={(e) => setDisplayName(e.target.value)} required /></label>
-            <label>PIN<input type="password" value={pin} onChange={(e) => setPin(e.target.value)} minLength={4} required /></label>
+            <label>PIN<input type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder={mode === 'join' ? 'Create your PIN. Remember it. No option to reset it yet' : 'Enter your PIN'} minLength={4} required /></label>
           </>
         )}
 
