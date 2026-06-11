@@ -10,4 +10,4 @@ CORS_ALLOWED_ORIGIN = "*"
 [[d1_databases]]
 binding = "DB"
 database_name = "fifa26-bracket-play-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "a275e5e0-32d2-4e15-9e07-43e364e675b1"
