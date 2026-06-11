@@ -2,6 +2,16 @@ import type { LeaderboardRow, Match, Outcome, Prediction, SessionState } from '.
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -13,13 +23,21 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
   });
 
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  const data = text ? safeJsonParse(text) : {};
 
   if (!response.ok) {
-    throw new Error(data.error || `Request failed: ${response.status}`);
+    throw new ApiError(data.error || `Request failed: ${response.status}`, response.status);
   }
 
   return data as T;
+}
+
+function safeJsonParse(text: string): any {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
 }
 
 export async function createLeague(name: string, adminPin: string) {
