@@ -52,6 +52,10 @@ function safeJsonParse(text: string): any {
   }
 }
 
+export async function lookupLeague(inviteCode: string) {
+  return request<{ leagueName: string }>(`/api/leagues/lookup?inviteCode=${encodeURIComponent(inviteCode)}`);
+}
+
 export async function createLeague(name: string, adminPin: string) {
   return request<{ leagueId: string; leagueName: string; inviteCode: string; adminToken: string }>('/api/leagues', {
     method: 'POST',

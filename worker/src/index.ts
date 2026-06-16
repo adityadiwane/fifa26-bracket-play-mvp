@@ -28,6 +28,14 @@ export default {
         return ok({ status: 'ok', app: 'fifa26-bracket-play' }, env);
       }
 
+      if (request.method === 'GET' && path === '/api/leagues/lookup') {
+        const code = cleanString(url.searchParams.get('inviteCode'), 20).toUpperCase();
+        if (!code) return fail('inviteCode query param is required.', env, 400);
+        const league = await env.DB.prepare(`SELECT name FROM leagues WHERE invite_code = ?`).bind(code).first<{ name: string }>();
+        if (!league) return fail('League not found.', env, 404);
+        return ok({ leagueName: league.name }, env);
+      }
+
       if (request.method === 'POST' && path === '/api/leagues') {
         return await createLeague(request, env);
       }
