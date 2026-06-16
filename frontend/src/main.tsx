@@ -9,6 +9,7 @@ import {
   getMyPredictions,
   joinLeague,
   loginUser,
+  lookupLeague,
   savePrediction,
   updateResult
 } from './api';
@@ -63,10 +64,28 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
   const [error, setError] = useState('');
 
   const [leagueName, setLeagueName] = useState('My World Cup Pool');
+  const [leagueLookup, setLeagueLookup] = useState<{ status: 'idle' | 'found' | 'not_found'; name: string }>({ status: 'idle', name: '' });
   const [adminPin, setAdminPin] = useState('');
   const [inviteCode, setInviteCode] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [pin, setPin] = useState('');
+
+  useEffect(() => {
+    const trimmed = inviteCode.trim();
+    if (trimmed.length < 4) {
+      setLeagueLookup({ status: 'idle', name: '' });
+      return;
+    }
+    const timeout = setTimeout(async () => {
+      try {
+        const result = await lookupLeague(trimmed);
+        setLeagueLookup({ status: 'found', name: result.leagueName });
+      } catch {
+        setLeagueLookup({ status: 'not_found', name: '' });
+      }
+    }, 400);
+    return () => clearTimeout(timeout);
+  }, [inviteCode]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -123,6 +142,8 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
         ) : (
           <>
             <label>Invite code<AutoResizeInput value={inviteCode} onChange={(e) => setInviteCode(e.target.value.toUpperCase())} placeholder={inviteCodePlaceholder} required /></label>
+            {leagueLookup.status === 'found' && <div className="league-resolved">League: <strong>{leagueLookup.name}</strong></div>}
+            {leagueLookup.status === 'not_found' && <div className="league-not-found">No league exists with this code</div>}
             <label>Display name<AutoResizeInput value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={displayNamePlaceholder} required /></label>
             <label>PIN<AutoResizeInput type="password" value={pin} onChange={(e) => setPin(e.target.value)} placeholder={pinPlaceholder} minLength={4} required /></label>
           </>
@@ -190,7 +211,10 @@ function PredictionsPage({ session }: { session: SessionState }) {
     }
 
     if (!selectedDate || !dateOptions.some((date) => date.value === selectedDate)) {
-      setSelectedDate(dateOptions[0].value);
+      const today = getLocalDateKey(new Date().toISOString());
+      const todayMatch = dateOptions.find((d) => d.value === today);
+      const futureMatch = dateOptions.find((d) => d.value >= today);
+      setSelectedDate(todayMatch?.value ?? futureMatch?.value ?? dateOptions[0].value);
     }
   }, [dateOptions, selectedDate]);
 

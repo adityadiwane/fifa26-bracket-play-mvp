@@ -136,6 +136,8 @@ input, select {
 }
 .error { background: #fdecec; color: #9d1c1c; }
 .success { background: #e8f8ee; color: #166536; }
+.league-resolved { background: #e8f4fd; color: #1a5276; padding: 8px 12px; border-radius: 10px; font-size: 0.9rem; }
+.league-not-found { background: #fdecec; color: #9d1c1c; padding: 8px 12px; border-radius: 10px; font-size: 0.9rem; font-weight: 700; }
 .empty { background: white; color: #66758c; }
 
 table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 18px; }
