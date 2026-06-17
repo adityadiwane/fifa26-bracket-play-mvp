@@ -39,8 +39,10 @@ function App() {
       <header className="topbar">
         <div>
           <p className="eyebrow">FIFA26 Bracket Play</p>
-          <h1>{session.leagueName}</h1>
-          {session.inviteCode && <p className="muted">Invite code: <strong>{session.inviteCode}</strong></p>}
+          <h1 className="league-heading">
+            <span>{session.leagueName}</span>
+            {session.inviteCode && <span className="league-invite-code">Invite code: {session.inviteCode}</span>}
+          </h1>
         </div>
         <button className="ghost" onClick={() => persistSession(null)}>Log out</button>
       </header>
@@ -103,10 +105,10 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
         });
       } else if (mode === 'join') {
         const joined = await joinLeague(inviteCode, displayName, pin);
-        onSession(joined);
+        onSession({ ...joined, inviteCode: inviteCode.trim().toUpperCase() });
       } else {
         const loggedIn = await loginUser(inviteCode, displayName, pin);
-        onSession(loggedIn);
+        onSession({ ...loggedIn, inviteCode: inviteCode.trim().toUpperCase() });
       }
     } catch (err) {
       setError(getAuthErrorMessage(mode, err));

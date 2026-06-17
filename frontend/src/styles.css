@@ -65,6 +65,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .app-shell { max-width: 1120px; margin: 0 auto; padding: 24px; }
 .topbar { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 18px; }
 .topbar h1 { margin: 0; }
+.league-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 12px; }
+.league-invite-code { color: #8b96a8; font-size: 0.95rem; font-weight: 600; }
 .eyebrow { text-transform: uppercase; letter-spacing: 0.12em; font-size: 0.75rem; color: #57708f; font-weight: 800; margin: 0 0 8px; }
 .muted { color: #66758c; }
 .small { font-size: 0.9rem; }
