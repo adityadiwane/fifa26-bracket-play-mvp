@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS users (
   league_id TEXT NOT NULL,
   display_name TEXT NOT NULL,
   user_pin_hash TEXT NOT NULL,
+  bonus_points REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   last_login_at TEXT,
   FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,

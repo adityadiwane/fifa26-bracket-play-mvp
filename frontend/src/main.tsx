@@ -362,7 +362,7 @@ function LeaderboardPage({ session }: { session: SessionState }) {
       {error && <div className="error">{error}</div>}
       <table>
         <thead>
-          <tr><th>Rank</th><th>Player</th><th>Points</th><th>Correct</th><th>Wrong</th></tr>
+          <tr><th>Rank</th><th>Player</th><th>Points</th><th>Bonus</th><th>Correct</th><th>Wrong</th></tr>
         </thead>
         <tbody>
           {rows.map((row) => (
@@ -370,6 +370,7 @@ function LeaderboardPage({ session }: { session: SessionState }) {
               <td>{row.rank}</td>
               <td>{row.display_name}</td>
               <td><strong>{row.total_points}</strong></td>
+              <td>{row.bonus_points}</td>
               <td>{row.correct_picks}</td>
               <td>{row.wrong_picks}</td>
             </tr>
