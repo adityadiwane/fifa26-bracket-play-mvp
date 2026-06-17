@@ -147,7 +147,7 @@ async function joinLeague(request: Request, env: Env): Promise<Response> {
   } else {
     userId = makeId('usr');
     await env.DB.prepare(
-      `INSERT INTO users (id, league_id, display_name, user_pin_hash) VALUES (?, ?, ?, ?)`
+      `INSERT INTO users (id, league_id, display_name, user_pin_hash, bonus_points) VALUES (?, ?, ?, ?, 8)`
     ).bind(userId, league.id, displayName, pinHash).run();
   }
 
@@ -282,11 +282,12 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
   const { results } = await env.DB.prepare(
     `SELECT u.id AS user_id,
             u.display_name,
+            u.bonus_points,
             COALESCE(SUM(CASE
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
               ELSE 0
-            END), 0) AS total_points,
+            END), 0) + u.bonus_points AS total_points,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL AND p.predicted_outcome != m.actual_outcome THEN 1 ELSE 0 END), 0) AS wrong_picks,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed_picks
@@ -294,7 +295,7 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
        LEFT JOIN predictions p ON p.user_id = u.id AND p.league_id = u.league_id
        LEFT JOIN matches m ON m.id = p.match_id
       WHERE u.league_id = ?
-      GROUP BY u.id, u.display_name
+      GROUP BY u.id, u.display_name, u.bonus_points
       ORDER BY total_points DESC, correct_picks DESC, completed_picks DESC, lower(u.display_name) ASC`
   ).bind(leagueId).all();
 

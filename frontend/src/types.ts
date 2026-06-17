@@ -42,6 +42,7 @@ export type LeaderboardRow = {
   user_id: string;
   display_name: string;
   total_points: number;
+  bonus_points: number;
   correct_picks: number;
   wrong_picks: number;
   completed_picks: number;
