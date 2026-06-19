@@ -279,10 +279,33 @@ async function savePrediction(request: Request, env: Env): Promise<Response> {
 async function getLeaderboard(request: Request, env: Env, leagueId: string): Promise<Response> {
   await requireLeagueSession(request, env, leagueId);
 
+  const { results: latestMatchRows } = await env.DB.prepare(
+    `SELECT id, fifa_match_no, home_team, away_team, home_placeholder, away_placeholder, stage
+       FROM matches
+      WHERE kickoff_at = (
+        SELECT kickoff_at FROM matches
+         WHERE datetime(kickoff_at) <= datetime('now')
+         ORDER BY datetime(kickoff_at) DESC
+         LIMIT 1
+      )
+      ORDER BY fifa_match_no ASC`
+  ).all();
+
+  const latestMatches = (latestMatchRows ?? []).map((m: any) => ({
+    id: m.id as string,
+    fifa_match_no: m.fifa_match_no as number,
+    home_label: labelFor(m.home_team, m.home_placeholder),
+    away_label: labelFor(m.away_team, m.away_placeholder),
+    stage: m.stage as string,
+  }));
+
+  const latestMatchIds = latestMatches.map((m) => m.id);
+
   const { results } = await env.DB.prepare(
     `SELECT u.id AS user_id,
             u.display_name,
             u.bonus_points,
+            u.previous_rank,
             COALESCE(SUM(CASE
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
@@ -295,9 +318,26 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
        LEFT JOIN predictions p ON p.user_id = u.id AND p.league_id = u.league_id
        LEFT JOIN matches m ON m.id = p.match_id
       WHERE u.league_id = ?
-      GROUP BY u.id, u.display_name, u.bonus_points
+      GROUP BY u.id, u.display_name, u.bonus_points, u.previous_rank
       ORDER BY total_points DESC, correct_picks DESC, completed_picks DESC, lower(u.display_name) ASC`
   ).bind(leagueId).all();
+
+  const picksMap = new Map<string, Record<string, string | null>>();
+  if (latestMatchIds.length > 0) {
+    const placeholders = latestMatchIds.map(() => '?').join(', ');
+    const { results: pickRows } = await env.DB.prepare(
+      `SELECT user_id, match_id, predicted_outcome
+         FROM predictions
+        WHERE league_id = ? AND match_id IN (${placeholders})`
+    ).bind(leagueId, ...latestMatchIds).all();
+
+    for (const row of pickRows ?? []) {
+      const userId = row.user_id as string;
+      const matchId = row.match_id as string;
+      if (!picksMap.has(userId)) picksMap.set(userId, {});
+      picksMap.get(userId)![matchId] = row.predicted_outcome as string;
+    }
+  }
 
   let lastPoints: number | null = null;
   let lastCorrect: number | null = null;
@@ -306,14 +346,21 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
     const points = Number(row.total_points ?? 0);
     const correct = Number(row.correct_picks ?? 0);
     if (points !== lastPoints || correct !== lastCorrect) {
-      rank = index + 1;
+      rank++;
       lastPoints = points;
       lastCorrect = correct;
     }
-    return { ...row, rank };
+    const userPicks = picksMap.get(row.user_id) ?? {};
+    const latest_picks: Record<string, string | null> = {};
+    for (const matchId of latestMatchIds) {
+      latest_picks[matchId] = userPicks[matchId] ?? null;
+    }
+    const previousRank = Number(row.previous_rank ?? 0);
+    const rank_change: string = previousRank === 0 ? 'same' : previousRank > rank ? 'up' : previousRank < rank ? 'down' : 'same';
+    return { ...row, latest_picks, rank, rank_change };
   });
 
-  return ok({ leaderboard }, env);
+  return ok({ leaderboard, latestMatches: latestMatches }, env);
 }
 
 async function updateMatchResult(request: Request, env: Env, matchId: string): Promise<Response> {
@@ -331,6 +378,8 @@ async function updateMatchResult(request: Request, env: Env, matchId: string): P
     throw new AppError('Draw is only allowed for group-stage matches.', 400);
   }
 
+  await snapshotRanks(env, session.league_id);
+
   const oldValue = JSON.stringify({ status: match.status, actualOutcome: match.actual_outcome });
   await env.DB.prepare(
     `UPDATE matches SET actual_outcome = ?, status = 'COMPLETED', updated_at = datetime('now') WHERE id = ?`
@@ -342,6 +391,43 @@ async function updateMatchResult(request: Request, env: Env, matchId: string): P
   ).bind(makeId('audit'), session.league_id, matchId, oldValue, JSON.stringify({ status: 'COMPLETED', actualOutcome })).run();
 
   return ok({ updated: true, matchId, actualOutcome }, env);
+}
+
+async function snapshotRanks(env: Env, leagueId: string): Promise<void> {
+  const { results } = await env.DB.prepare(
+    `SELECT u.id AS user_id,
+            COALESCE(SUM(CASE
+              WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
+              WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
+              ELSE 0
+            END), 0) + u.bonus_points AS total_points,
+            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
+            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed_picks
+       FROM users u
+       LEFT JOIN predictions p ON p.user_id = u.id AND p.league_id = u.league_id
+       LEFT JOIN matches m ON m.id = p.match_id
+      WHERE u.league_id = ?
+      GROUP BY u.id, u.bonus_points
+      ORDER BY total_points DESC, correct_picks DESC, completed_picks DESC`
+  ).bind(leagueId).all();
+
+  if (!results || results.length === 0) return;
+
+  let lastPoints: number | null = null;
+  let lastCorrect: number | null = null;
+  let rank = 0;
+  const updates = (results).map((row: any) => {
+    const points = Number(row.total_points ?? 0);
+    const correct = Number(row.correct_picks ?? 0);
+    if (points !== lastPoints || correct !== lastCorrect) {
+      rank++;
+      lastPoints = points;
+      lastCorrect = correct;
+    }
+    return env.DB.prepare(`UPDATE users SET previous_rank = ? WHERE id = ?`).bind(rank, row.user_id);
+  });
+
+  await env.DB.batch(updates);
 }
 
 async function findLeague(env: Env, leagueId?: unknown, inviteCode?: unknown): Promise<{ id: string; name: string; invite_code: string; admin_pin_hash: string }> {

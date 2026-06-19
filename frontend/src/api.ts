@@ -1,4 +1,4 @@
-import type { LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
+import type { LatestMatch, LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -100,7 +100,7 @@ export async function savePrediction(matchId: string, predictedOutcome: Outcome,
 }
 
 export async function getLeaderboard(leagueId: string, token: string) {
-  return request<{ leaderboard: LeaderboardRow[] }>(`/api/league/${leagueId}/leaderboard`, {}, token);
+  return request<{ leaderboard: LeaderboardRow[]; latestMatches: LatestMatch[] }>(`/api/league/${leagueId}/leaderboard`, {}, token);
 }
 
 export async function updateResult(matchId: string, actualOutcome: Outcome, adminToken: string) {
