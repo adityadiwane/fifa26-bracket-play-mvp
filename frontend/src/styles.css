@@ -142,19 +142,41 @@ input, select {
 .league-not-found { background: #fdecec; color: #9d1c1c; padding: 8px 12px; border-radius: 10px; font-size: 0.9rem; font-weight: 700; }
 .empty { background: white; color: #66758c; }
 
+.rank-up { color: #1a8f3c; font-size: 0.75em; margin-left: 2px; }
+.rank-down { color: #c0392b; font-size: 0.75em; margin-left: 2px; }
+.rank-same { color: #aab2bd; font-size: 0.75em; margin-left: 2px; }
+
 table { width: 100%; border-collapse: collapse; overflow: hidden; border-radius: 18px; }
-th, td { text-align: left; padding: 14px; border-bottom: 1px solid rgba(23, 32, 51, 0.08); }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 18px; }
+th, td { text-align: left; padding: 14px; border-bottom: 1px solid rgba(23, 32, 51, 0.08); white-space: nowrap; }
 th { color: #66758c; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
 
 @media (max-width: 760px) {
   .auth-page, .content-grid.two-column { grid-template-columns: 1fr; }
   .auth-page, .app-shell { padding: 16px; }
-  .hero-card { min-height: 420px; }
+  .hero-card { min-height: 280px; }
   .topbar, .section-header { align-items: stretch; flex-direction: column; }
   .prediction-controls { align-items: stretch; justify-content: stretch; }
   .date-picker { min-width: 0; }
-  .tabs, .pick-row { grid-template-columns: 1fr; }
   .tabs { display: grid; grid-template-columns: repeat(3, 1fr); }
   .segmented { overflow-x: auto; }
+  .segmented button { flex: 1; min-width: 0; }
   .teams { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .teams { font-size: 1.1rem; }
+  .match-card { padding: 14px; }
+  .pick-row { grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); }
+  .pick { min-height: 44px; padding: 10px 8px; font-size: 0.85rem; }
+  th, td { padding: 10px 8px; font-size: 0.85rem; }
+  td:first-child, th:first-child { padding-left: 12px; }
+  .panel { padding: 18px; border-radius: 18px; }
+  .hero-card, .panel, .match-card { border-radius: 18px; }
+}
+
+@media (max-width: 400px) {
+  .auth-page, .app-shell { padding: 10px; }
+  .hero-card { min-height: 200px; }
+  .tabs button, .mode-switcher button, .segmented button { padding: 8px 10px; font-size: 0.85rem; }
+  .primary { padding: 14px 12px; }
+  .match-meta { font-size: 0.78rem; }
+  th, td { padding: 8px 6px; font-size: 0.8rem; }
 }

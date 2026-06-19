@@ -39,6 +39,8 @@ export type Prediction = {
 
 export type LeaderboardRow = {
   rank: number;
+  previous_rank: number;
+  rank_change: 'up' | 'down' | 'same';
   user_id: string;
   display_name: string;
   total_points: number;
@@ -46,4 +48,13 @@ export type LeaderboardRow = {
   correct_picks: number;
   wrong_picks: number;
   completed_picks: number;
+  latest_picks?: Record<string, Outcome | null>;
+};
+
+export type LatestMatch = {
+  id: string;
+  fifa_match_no: number;
+  home_label: string;
+  away_label: string;
+  stage: string;
 };

@@ -13,7 +13,7 @@ import {
   savePrediction,
   updateResult
 } from './api';
-import type { LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
+import type { LatestMatch, LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
 import './styles.css';
 
 const STORAGE_KEY = 'fifa26.session.v1';
@@ -332,6 +332,7 @@ function OutcomeButton({ outcome, label, selected, disabled, onClick }: {
 
 function LeaderboardPage({ session }: { session: SessionState }) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
+  const [latestMatches, setLatestMatches] = useState<LatestMatch[]>([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
 
@@ -340,6 +341,7 @@ function LeaderboardPage({ session }: { session: SessionState }) {
       try {
         const response = await getLeaderboard(session.leagueId, session.token);
         setRows(response.leaderboard);
+        setLatestMatches(response.latestMatches ?? []);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load leaderboard.');
       } finally {
@@ -351,6 +353,13 @@ function LeaderboardPage({ session }: { session: SessionState }) {
 
   if (loading) return <Loading />;
 
+  function pickLabel(match: LatestMatch, pick?: Outcome | null): string {
+    if (!pick) return '–';
+    if (pick === 'HOME_WIN') return match.home_label;
+    if (pick === 'AWAY_WIN') return match.away_label;
+    return 'Draw';
+  }
+
   return (
     <section className="panel wide">
       <div className="section-header">
@@ -360,23 +369,34 @@ function LeaderboardPage({ session }: { session: SessionState }) {
         </div>
       </div>
       {error && <div className="error">{error}</div>}
-      <table>
-        <thead>
-          <tr><th>Rank</th><th>Player</th><th>Points</th><th>Bonus</th><th>Correct</th><th>Wrong</th></tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.user_id}>
-              <td>{row.rank}</td>
-              <td>{row.display_name}</td>
-              <td><strong>{row.total_points}</strong></td>
-              <td>{row.bonus_points}</td>
-              <td>{row.correct_picks}</td>
-              <td>{row.wrong_picks}</td>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th><th>Player</th><th>Points</th>
+              {latestMatches.map((m) => (
+                <th key={m.id}>{m.home_label.slice(0, 3).toUpperCase()} vs {m.away_label.slice(0, 3).toUpperCase()}</th>
+              ))}
+              <th>Correct</th><th>Wrong</th><th>Bonus</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.user_id}>
+                <td>{row.rank} <span className={`rank-${row.rank_change}`}>{row.rank_change === 'up' ? '\u25B2' : row.rank_change === 'down' ? '\u25BC' : '\u2014'}</span></td>
+                <td>{row.display_name}</td>
+                <td><strong>{row.total_points}</strong></td>
+                {latestMatches.map((m) => (
+                  <td key={m.id}>{pickLabel(m, row.latest_picks?.[m.id])}</td>
+                ))}
+                <td>{row.correct_picks}</td>
+                <td>{row.wrong_picks}</td>
+                <td>{row.bonus_points}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {rows.length === 0 && <div className="empty">No players have joined yet.</div>}
     </section>
   );
