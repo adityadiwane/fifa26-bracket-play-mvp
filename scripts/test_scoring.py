@@ -1,6 +1,6 @@
 import unittest
 
-from scoring import Outcome, calculate_match_points, is_outcome_allowed
+from scoring import Outcome, calculate_match_points, is_outcome_allowed, is_score_prediction_allowed
 
 
 class ScoringTests(unittest.TestCase):
@@ -13,6 +13,18 @@ class ScoringTests(unittest.TestCase):
     def test_wrong_winner_pick_gets_zero_points(self):
         self.assertEqual(calculate_match_points(Outcome.AWAY_WIN, Outcome.HOME_WIN), 0)
 
+    def test_correct_score_prediction_gets_bonus_point(self):
+        self.assertEqual(
+            calculate_match_points(Outcome.HOME_WIN, Outcome.HOME_WIN, 2, 1, 2, 1),
+            3,
+        )
+
+    def test_correct_score_without_correct_winner_gets_zero_points(self):
+        self.assertEqual(
+            calculate_match_points(Outcome.AWAY_WIN, Outcome.HOME_WIN, 2, 1, 2, 1),
+            0,
+        )
+
     def test_wrong_draw_pick_gets_zero_points(self):
         self.assertEqual(calculate_match_points(Outcome.DRAW, Outcome.HOME_WIN), 0)
 
@@ -24,6 +36,12 @@ class ScoringTests(unittest.TestCase):
 
     def test_knockout_draw_is_not_allowed(self):
         self.assertFalse(is_outcome_allowed("FINAL", Outcome.DRAW))
+
+    def test_knockout_tied_score_prediction_is_not_allowed(self):
+        self.assertFalse(is_score_prediction_allowed("ROUND_OF_32", 1, 1))
+
+    def test_knockout_winning_score_prediction_is_allowed(self):
+        self.assertTrue(is_score_prediction_allowed("ROUND_OF_32", 2, 1))
 
 
 if __name__ == "__main__":

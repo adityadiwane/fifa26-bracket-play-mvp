@@ -92,10 +92,20 @@ export async function getMyPredictions(leagueId: string, token: string) {
   return request<{ predictions: Prediction[] }>(`/api/league/${leagueId}/predictions/me`, {}, token);
 }
 
-export async function savePrediction(matchId: string, predictedOutcome: Outcome, token: string) {
+export async function savePrediction(
+  matchId: string,
+  predictedOutcome: Outcome,
+  token: string,
+  predictedScore?: { home: number | null; away: number | null }
+) {
   return request<{ saved: boolean }>('/api/predictions', {
     method: 'POST',
-    body: JSON.stringify({ matchId, predictedOutcome })
+    body: JSON.stringify({
+      matchId,
+      predictedOutcome,
+      predictedHomeScore: predictedScore?.home ?? null,
+      predictedAwayScore: predictedScore?.away ?? null
+    })
   }, token);
 }
 
@@ -103,9 +113,18 @@ export async function getLeaderboard(leagueId: string, token: string) {
   return request<{ leaderboard: LeaderboardRow[]; latestMatches: LatestMatch[] }>(`/api/league/${leagueId}/leaderboard`, {}, token);
 }
 
-export async function updateResult(matchId: string, actualOutcome: Outcome, adminToken: string) {
+export async function updateResult(
+  matchId: string,
+  actualOutcome: Outcome,
+  adminToken: string,
+  actualScore?: { home: number | null; away: number | null }
+) {
   return request<{ updated: boolean }>('/api/admin/matches/' + matchId + '/result', {
     method: 'POST',
-    body: JSON.stringify({ actualOutcome })
+    body: JSON.stringify({
+      actualOutcome,
+      actualHomeScore: actualScore?.home ?? null,
+      actualAwayScore: actualScore?.away ?? null
+    })
   }, adminToken);
 }

@@ -1,5 +1,5 @@
 -- FIFA26 Bracket Play - Cloudflare D1 schema
--- Prediction model: users pick outcome only: HOME_WIN, DRAW, AWAY_WIN.
+-- Prediction model: users pick outcome, with optional score predictions.
 
 PRAGMA foreign_keys = ON;
 
@@ -37,9 +37,13 @@ CREATE TABLE IF NOT EXISTS matches (
   venue TEXT,
   status TEXT NOT NULL DEFAULT 'SCHEDULED', -- SCHEDULED, COMPLETED, POSTPONED
   actual_outcome TEXT, -- HOME_WIN, DRAW, AWAY_WIN
+  actual_home_score INTEGER,
+  actual_away_score INTEGER,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (status IN ('SCHEDULED', 'COMPLETED', 'POSTPONED')),
-  CHECK (actual_outcome IS NULL OR actual_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN'))
+  CHECK (actual_outcome IS NULL OR actual_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN')),
+  CHECK (actual_home_score IS NULL OR actual_home_score BETWEEN 0 AND 99),
+  CHECK (actual_away_score IS NULL OR actual_away_score BETWEEN 0 AND 99)
 );
 
 CREATE TABLE IF NOT EXISTS predictions (
@@ -48,13 +52,17 @@ CREATE TABLE IF NOT EXISTS predictions (
   user_id TEXT NOT NULL,
   match_id TEXT NOT NULL,
   predicted_outcome TEXT NOT NULL,
+  predicted_home_score INTEGER,
+  predicted_away_score INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
   UNIQUE (league_id, user_id, match_id),
-  CHECK (predicted_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN'))
+  CHECK (predicted_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN')),
+  CHECK (predicted_home_score IS NULL OR predicted_home_score BETWEEN 0 AND 99),
+  CHECK (predicted_away_score IS NULL OR predicted_away_score BETWEEN 0 AND 99)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

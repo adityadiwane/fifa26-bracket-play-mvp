@@ -197,9 +197,9 @@ async function loginAdmin(request: Request, env: Env): Promise<Response> {
 
 async function listMatches(request: Request, env: Env, leagueId: string): Promise<Response> {
   await requireLeagueSession(request, env, leagueId);
-  const { results } = await env.DB.prepare(
+      const { results } = await env.DB.prepare(
     `SELECT id, fifa_match_no, stage, group_name, home_team, away_team, home_placeholder, away_placeholder,
-            kickoff_at, venue, status, actual_outcome, updated_at
+            kickoff_at, venue, status, actual_outcome, actual_home_score, actual_away_score, updated_at
        FROM matches
       ORDER BY datetime(kickoff_at), fifa_match_no`
   ).all();
@@ -221,10 +221,21 @@ async function listMyPredictions(request: Request, env: Env, leagueId: string): 
   if (!session.user_id) throw new AppError('User session required.', 401);
 
   const { results } = await env.DB.prepare(
-    `SELECT p.match_id, p.predicted_outcome, p.created_at, p.updated_at,
+    `SELECT p.match_id, p.predicted_outcome, p.predicted_home_score, p.predicted_away_score, p.created_at, p.updated_at,
             CASE
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
+              ELSE 0
+            END +
+            CASE
+              WHEN m.status = 'COMPLETED'
+               AND p.predicted_outcome = m.actual_outcome
+               AND p.predicted_home_score IS NOT NULL
+               AND p.predicted_away_score IS NOT NULL
+               AND m.actual_home_score IS NOT NULL
+               AND m.actual_away_score IS NOT NULL
+               AND p.predicted_home_score = m.actual_home_score
+               AND p.predicted_away_score = m.actual_away_score THEN 1
               ELSE 0
             END AS points_awarded
        FROM predictions p
@@ -242,6 +253,8 @@ async function savePrediction(request: Request, env: Env): Promise<Response> {
   const body = await readJson(request);
   const matchId = cleanString(body.matchId, 80);
   const predictedOutcome = cleanString(body.predictedOutcome, 20) as Outcome;
+  const predictedHomeScore = parseOptionalScore(body.predictedHomeScore, 'predictedHomeScore');
+  const predictedAwayScore = parseOptionalScore(body.predictedAwayScore, 'predictedAwayScore');
   if (!matchId) throw new AppError('matchId is required.', 400);
   validateOutcome(predictedOutcome);
 
@@ -257,6 +270,7 @@ async function savePrediction(request: Request, env: Env): Promise<Response> {
   if (predictedOutcome === 'DRAW' && !isGroupStage(match.stage)) {
     throw new AppError('Draw is only allowed for group-stage matches.', 400);
   }
+  validateScorePair(predictedHomeScore, predictedAwayScore, match.stage);
 
   const existing = await env.DB.prepare(
     `SELECT id FROM predictions WHERE league_id = ? AND user_id = ? AND match_id = ?`
@@ -264,16 +278,21 @@ async function savePrediction(request: Request, env: Env): Promise<Response> {
 
   if (existing) {
     await env.DB.prepare(
-      `UPDATE predictions SET predicted_outcome = ?, updated_at = datetime('now') WHERE id = ?`
-    ).bind(predictedOutcome, existing.id).run();
+      `UPDATE predictions
+          SET predicted_outcome = ?,
+              predicted_home_score = ?,
+              predicted_away_score = ?,
+              updated_at = datetime('now')
+        WHERE id = ?`
+    ).bind(predictedOutcome, predictedHomeScore, predictedAwayScore, existing.id).run();
   } else {
     await env.DB.prepare(
-      `INSERT INTO predictions (id, league_id, user_id, match_id, predicted_outcome)
-       VALUES (?, ?, ?, ?, ?)`
-    ).bind(makeId('pred'), session.league_id, session.user_id, matchId, predictedOutcome).run();
+      `INSERT INTO predictions (id, league_id, user_id, match_id, predicted_outcome, predicted_home_score, predicted_away_score)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(makeId('pred'), session.league_id, session.user_id, matchId, predictedOutcome, predictedHomeScore, predictedAwayScore).run();
   }
 
-  return ok({ saved: true, matchId, predictedOutcome }, env);
+  return ok({ saved: true, matchId, predictedOutcome, predictedHomeScore, predictedAwayScore }, env);
 }
 
 async function getLeaderboard(request: Request, env: Env, leagueId: string): Promise<Response> {
@@ -310,10 +329,32 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
               ELSE 0
+            END), 0) +
+            COALESCE(SUM(CASE
+              WHEN m.status = 'COMPLETED'
+               AND p.predicted_outcome = m.actual_outcome
+               AND p.predicted_home_score IS NOT NULL
+               AND p.predicted_away_score IS NOT NULL
+               AND m.actual_home_score IS NOT NULL
+               AND m.actual_away_score IS NOT NULL
+               AND p.predicted_home_score = m.actual_home_score
+               AND p.predicted_away_score = m.actual_away_score THEN 1
+              ELSE 0
             END), 0) + u.bonus_points AS total_points,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL AND p.predicted_outcome != m.actual_outcome THEN 1 ELSE 0 END), 0) AS wrong_picks,
-            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed_picks
+            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed_picks,
+            COALESCE(SUM(CASE
+              WHEN m.status = 'COMPLETED'
+               AND p.predicted_outcome = m.actual_outcome
+               AND p.predicted_home_score IS NOT NULL
+               AND p.predicted_away_score IS NOT NULL
+               AND m.actual_home_score IS NOT NULL
+               AND m.actual_away_score IS NOT NULL
+               AND p.predicted_home_score = m.actual_home_score
+               AND p.predicted_away_score = m.actual_away_score THEN 1
+              ELSE 0
+            END), 0) AS score_bonus_points
        FROM users u
        LEFT JOIN predictions p ON p.user_id = u.id AND p.league_id = u.league_id
        LEFT JOIN matches m ON m.id = p.match_id
@@ -367,6 +408,8 @@ async function updateMatchResult(request: Request, env: Env, matchId: string): P
   const session = await requireSession(request, env, { admin: true });
   const body = await readJson(request);
   const actualOutcome = cleanString(body.actualOutcome, 20) as Outcome;
+  const actualHomeScore = parseOptionalScore(body.actualHomeScore, 'actualHomeScore');
+  const actualAwayScore = parseOptionalScore(body.actualAwayScore, 'actualAwayScore');
   validateOutcome(actualOutcome);
 
   const match = await env.DB.prepare(
@@ -377,18 +420,25 @@ async function updateMatchResult(request: Request, env: Env, matchId: string): P
   if (actualOutcome === 'DRAW' && !isGroupStage(match.stage)) {
     throw new AppError('Draw is only allowed for group-stage matches.', 400);
   }
+  validateScorePair(actualHomeScore, actualAwayScore, match.stage);
 
   await snapshotRanks(env, session.league_id);
 
   const oldValue = JSON.stringify({ status: match.status, actualOutcome: match.actual_outcome });
   await env.DB.prepare(
-    `UPDATE matches SET actual_outcome = ?, status = 'COMPLETED', updated_at = datetime('now') WHERE id = ?`
-  ).bind(actualOutcome, matchId).run();
+    `UPDATE matches
+        SET actual_outcome = ?,
+            actual_home_score = ?,
+            actual_away_score = ?,
+            status = 'COMPLETED',
+            updated_at = datetime('now')
+      WHERE id = ?`
+  ).bind(actualOutcome, actualHomeScore, actualAwayScore, matchId).run();
 
   await env.DB.prepare(
     `INSERT INTO admin_audit_log (id, league_id, action, match_id, old_value, new_value)
      VALUES (?, ?, 'UPDATE_MATCH_RESULT', ?, ?, ?)`
-  ).bind(makeId('audit'), session.league_id, matchId, oldValue, JSON.stringify({ status: 'COMPLETED', actualOutcome })).run();
+  ).bind(makeId('audit'), session.league_id, matchId, oldValue, JSON.stringify({ status: 'COMPLETED', actualOutcome, actualHomeScore, actualAwayScore })).run();
 
   return ok({ updated: true, matchId, actualOutcome }, env);
 }
@@ -399,6 +449,17 @@ async function snapshotRanks(env: Env, leagueId: string): Promise<void> {
             COALESCE(SUM(CASE
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
+              ELSE 0
+            END), 0) +
+            COALESCE(SUM(CASE
+              WHEN m.status = 'COMPLETED'
+               AND p.predicted_outcome = m.actual_outcome
+               AND p.predicted_home_score IS NOT NULL
+               AND p.predicted_away_score IS NOT NULL
+               AND m.actual_home_score IS NOT NULL
+               AND m.actual_away_score IS NOT NULL
+               AND p.predicted_home_score = m.actual_home_score
+               AND p.predicted_away_score = m.actual_away_score THEN 1
               ELSE 0
             END), 0) + u.bonus_points AS total_points,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
@@ -494,6 +555,27 @@ function labelFor(team?: string | null, placeholder?: string | null): string {
 
 function validateOutcome(outcome: Outcome): void {
   if (!OUTCOMES.includes(outcome)) throw new AppError('Invalid outcome. Use HOME_WIN, DRAW, or AWAY_WIN.', 400);
+}
+
+function parseOptionalScore(value: unknown, fieldName: string): number | null {
+  if (value === undefined || value === null || value === '') return null;
+
+  const score = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(score) || score < 0 || score > 99) {
+    throw new AppError(`${fieldName} must be a whole number from 0 to 99.`, 400);
+  }
+
+  return score;
+}
+
+function validateScorePair(homeScore: number | null, awayScore: number | null, stage: string): void {
+  if ((homeScore === null) !== (awayScore === null)) {
+    throw new AppError('Both home and away scores are required to predict a score.', 400);
+  }
+
+  if (homeScore !== null && awayScore !== null && !isGroupStage(stage) && homeScore === awayScore) {
+    throw new AppError('Knockout score predictions cannot be tied.', 400);
+  }
 }
 
 async function readJson(request: Request): Promise<any> {

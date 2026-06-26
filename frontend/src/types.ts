@@ -25,6 +25,8 @@ export type Match = {
   venue?: string | null;
   status: 'SCHEDULED' | 'COMPLETED' | 'POSTPONED';
   actual_outcome?: Outcome | null;
+  actual_home_score?: number | null;
+  actual_away_score?: number | null;
   is_locked: boolean;
   allowed_outcomes: Outcome[];
 };
@@ -32,6 +34,8 @@ export type Match = {
 export type Prediction = {
   match_id: string;
   predicted_outcome: Outcome;
+  predicted_home_score?: number | null;
+  predicted_away_score?: number | null;
   points_awarded: number;
   created_at?: string;
   updated_at?: string;
@@ -45,6 +49,7 @@ export type LeaderboardRow = {
   display_name: string;
   total_points: number;
   bonus_points: number;
+  score_bonus_points?: number;
   correct_picks: number;
   wrong_picks: number;
   completed_picks: number;
