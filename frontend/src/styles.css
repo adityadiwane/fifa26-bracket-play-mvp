@@ -132,8 +132,21 @@ input, select {
 .pick { min-height: 46px; font-weight: 800; }
 .match-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; border-top: 1px solid rgba(23, 32, 51, 0.08); margin-top: 14px; padding-top: 12px; color: #66758c; font-size: 0.9rem; }
 
+/* Bracket */
 .bracket-section { display: grid; gap: 16px; }
 .bracket-actions { display: flex; align-items: center; gap: 12px; color: #66758c; font-weight: 800; }
+.double-counter { color: #8a6414; }
+.lock-banner {
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+.lock-banner p { margin: 0 0 4px; }
+.lock-banner p:last-child { margin-bottom: 0; }
+.lock-banner.open { background: #e7f8ec; color: #176b38; }
+.lock-banner.phase1 { background: #fff7e6; color: #8a6414; }
+.lock-banner.locked { background: #f3edf8; color: #6a3d87; }
 .bracket-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -150,25 +163,27 @@ input, select {
   display: grid;
   grid-template-columns: repeat(4, minmax(145px, 1fr));
   gap: 12px;
+  align-items: stretch;
 }
 .bracket-side.right .bracket-round { direction: rtl; }
 .bracket-side.right .bracket-match,
 .bracket-side.right .round-label { direction: ltr; }
-.bracket-round { display: grid; align-content: stretch; gap: 8px; min-width: 0; }
+.bracket-round { display: flex; flex-direction: column; min-width: 0; }
 .round-label {
   color: #57708f;
   font-size: 0.72rem;
   font-weight: 900;
   letter-spacing: 0.09em;
-  margin: 0;
+  margin: 0 0 6px;
   min-height: 18px;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 .round-stack {
-  display: grid;
-  gap: 10px;
-  align-content: space-around;
-  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  flex: 1;
 }
 .bracket-match {
   background: white;
@@ -177,10 +192,114 @@ input, select {
   box-shadow: 0 10px 28px rgba(23, 32, 51, 0.07);
   display: grid;
   gap: 6px;
-  min-height: 154px;
+  min-height: 130px;
+  margin: 4px 0;
   padding: 10px;
+  position: relative;
 }
 .bracket-match.locked { background: #f8f9fb; }
+.bracket-match.doubled { border-color: #f0c66d; box-shadow: 0 0 0 2px #f0c66d; }
+.bracket-match.result-correct { border-color: #22c55e; box-shadow: 0 0 0 2px #22c55e33; }
+.bracket-match.result-wrong { border-color: #ef4444; box-shadow: 0 0 0 2px #ef444433; }
+.bracket-match.result-correct.doubled { box-shadow: 0 0 0 2px #22c55e; }
+.bracket-match.result-wrong.doubled { box-shadow: 0 0 0 2px #ef4444; }
+
+.result-badge {
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.result-badge.correct { background: #dcfce7; color: #16a34a; }
+.result-badge.wrong { background: #fee2e2; color: #dc2626; }
+
+/* Connector lines between rounds */
+.bracket-side.left .bracket-match::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -7px;
+  width: 7px;
+  height: 2px;
+  background: #c8d1dc;
+}
+.bracket-side.right .bracket-match::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -7px;
+  width: 7px;
+  height: 2px;
+  background: #c8d1dc;
+}
+.bracket-side.left .bracket-match::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -7px;
+  width: 7px;
+  height: 2px;
+  background: #c8d1dc;
+}
+.bracket-side.right .bracket-match::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -7px;
+  width: 7px;
+  height: 2px;
+  background: #c8d1dc;
+}
+/* Hide inbound connector on first round (leftmost/rightmost) */
+.bracket-side.left .bracket-round:first-child .bracket-match::before { display: none; }
+.bracket-side.right .bracket-round:last-child .bracket-match::before { display: none; }
+/* Hide outbound connector on last round (closest to final) */
+.bracket-side.left .bracket-round:last-child .bracket-match::after { display: none; }
+.bracket-side.right .bracket-round:first-child .bracket-match::after { display: none; }
+
+/* Vertical merge lines connecting pairs to next round */
+.bracket-side.left .round-stack .bracket-match:nth-child(odd)::after {
+  border-right: 2px solid #c8d1dc;
+  border-top: 2px solid #c8d1dc;
+  height: calc(50% + 5px);
+  top: 50%;
+  width: 7px;
+  background: none;
+}
+.bracket-side.left .round-stack .bracket-match:nth-child(even)::after {
+  border-right: 2px solid #c8d1dc;
+  border-bottom: 2px solid #c8d1dc;
+  height: calc(50% + 5px);
+  bottom: 50%;
+  top: auto;
+  width: 7px;
+  background: none;
+}
+.bracket-side.right .round-stack .bracket-match:nth-child(odd)::after {
+  border-left: 2px solid #c8d1dc;
+  border-top: 2px solid #c8d1dc;
+  height: calc(50% + 5px);
+  top: 50%;
+  width: 7px;
+  background: none;
+}
+.bracket-side.right .round-stack .bracket-match:nth-child(even)::after {
+  border-left: 2px solid #c8d1dc;
+  border-bottom: 2px solid #c8d1dc;
+  height: calc(50% + 5px);
+  bottom: 50%;
+  top: auto;
+  width: 7px;
+  background: none;
+}
+/* Last round connectors toward final */
+.bracket-side.left .bracket-round:last-child .bracket-match::after { display: none; }
+.bracket-side.right .bracket-round:first-child .bracket-match::after { display: none; }
+
 .bracket-match-meta {
   display: flex;
   justify-content: space-between;
@@ -213,25 +332,22 @@ input, select {
   border-color: #172033;
   color: white;
 }
-.score-row {
-  align-items: center;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 10px minmax(0, 1fr);
-  gap: 5px;
-  color: #8994a7;
+.double-toggle {
+  align-self: center;
+  background: #f8fafc;
+  border: 1px solid rgba(23, 32, 51, 0.12);
+  border-radius: 6px;
+  color: #66758c;
+  font-size: 0.72rem;
   font-weight: 900;
-}
-.score-row input {
-  border-radius: 8px;
-  padding: 8px 6px;
+  padding: 4px 8px;
   text-align: center;
   width: 100%;
 }
-.score-error {
-  color: #9d1c1c;
-  font-size: 0.72rem;
-  font-weight: 800;
-  line-height: 1.2;
+.double-toggle.active {
+  background: #fff7e6;
+  border-color: #f0c66d;
+  color: #8a6414;
 }
 .bracket-points {
   color: #66758c;
@@ -259,7 +375,24 @@ input, select {
   text-transform: uppercase;
 }
 .champion-box strong { color: #172033; overflow-wrap: anywhere; }
-.score-admin-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+.third-place-box {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+.third-place-box .round-label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+}
+
+.mobile-bracket { display: none; }
+/* Leaderboard sub-tabs */
+.leaderboard-tabs { margin-bottom: 16px; }
 
 .error, .success, .empty {
   padding: 12px 14px;
@@ -302,9 +435,20 @@ th { color: #66758c; font-size: 0.8rem; text-transform: uppercase; letter-spacin
   .hero-card, .panel, .match-card { border-radius: 18px; }
   .bracket-actions { align-items: stretch; flex-direction: column; }
   .primary.compact { width: 100%; }
-  .bracket-board { min-width: 1280px; grid-template-columns: minmax(0, 1fr) 210px minmax(0, 1fr); }
-  .bracket-side { grid-template-columns: repeat(4, minmax(130px, 1fr)); }
-  .score-admin-row { grid-template-columns: 1fr; gap: 0; }
+  .bracket-board { min-width: 1200px; grid-template-columns: minmax(0, 1fr) 220px minmax(0, 1fr); gap: 12px; }
+  .bracket-side { grid-template-columns: repeat(4, minmax(115px, 1fr)); gap: 8px; }
+  .bracket-match { padding: 6px; gap: 3px; min-height: 95px; border-radius: 6px; }
+  .bracket-match-meta { font-size: 0.62rem; }
+  .bracket-team { padding: 4px 6px; font-size: 0.7rem; border-radius: 4px; }
+  .double-toggle { padding: 3px 6px; font-size: 0.62rem; }
+  .round-label { font-size: 0.58rem; margin-bottom: 3px; }
+  .final-column { gap: 8px; min-width: 200px; }
+  .final-column .bracket-match { min-height: 80px; }
+  .champion-box { padding: 6px; border-radius: 6px; }
+  .champion-box span { font-size: 0.58rem; }
+  .champion-box strong { font-size: 0.72rem; }
+  .third-place-box { margin-top: 6px; }
+  .third-place-box .round-label { margin-bottom: 2px; }
 }
 
 @media (max-width: 400px) {

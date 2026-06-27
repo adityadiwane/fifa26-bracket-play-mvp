@@ -1,5 +1,6 @@
 -- FIFA26 Bracket Play - Cloudflare D1 schema
--- Prediction model: users pick outcome, with optional score predictions.
+-- Prediction model: users pick outcome only (HOME_WIN, DRAW, AWAY_WIN).
+-- Bracket predictions are stored separately with optional double tokens.
 
 PRAGMA foreign_keys = ON;
 
@@ -37,13 +38,9 @@ CREATE TABLE IF NOT EXISTS matches (
   venue TEXT,
   status TEXT NOT NULL DEFAULT 'SCHEDULED', -- SCHEDULED, COMPLETED, POSTPONED
   actual_outcome TEXT, -- HOME_WIN, DRAW, AWAY_WIN
-  actual_home_score INTEGER,
-  actual_away_score INTEGER,
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   CHECK (status IN ('SCHEDULED', 'COMPLETED', 'POSTPONED')),
-  CHECK (actual_outcome IS NULL OR actual_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN')),
-  CHECK (actual_home_score IS NULL OR actual_home_score BETWEEN 0 AND 99),
-  CHECK (actual_away_score IS NULL OR actual_away_score BETWEEN 0 AND 99)
+  CHECK (actual_outcome IS NULL OR actual_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN'))
 );
 
 CREATE TABLE IF NOT EXISTS predictions (
@@ -52,17 +49,29 @@ CREATE TABLE IF NOT EXISTS predictions (
   user_id TEXT NOT NULL,
   match_id TEXT NOT NULL,
   predicted_outcome TEXT NOT NULL,
-  predicted_home_score INTEGER,
-  predicted_away_score INTEGER,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
   UNIQUE (league_id, user_id, match_id),
-  CHECK (predicted_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN')),
-  CHECK (predicted_home_score IS NULL OR predicted_home_score BETWEEN 0 AND 99),
-  CHECK (predicted_away_score IS NULL OR predicted_away_score BETWEEN 0 AND 99)
+  CHECK (predicted_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN'))
+);
+
+CREATE TABLE IF NOT EXISTS bracket_predictions (
+  id TEXT PRIMARY KEY,
+  league_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  match_id TEXT NOT NULL,
+  predicted_outcome TEXT NOT NULL, -- HOME_WIN or AWAY_WIN only
+  is_doubled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+  UNIQUE (league_id, user_id, match_id),
+  CHECK (predicted_outcome IN ('HOME_WIN', 'AWAY_WIN'))
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
@@ -94,4 +103,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_league_display_name_normalized
 CREATE INDEX IF NOT EXISTS idx_matches_kickoff ON matches(kickoff_at);
 CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(league_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_match ON predictions(league_id, match_id);
+CREATE INDEX IF NOT EXISTS idx_bracket_predictions_user ON bracket_predictions(league_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_bracket_predictions_match ON bracket_predictions(league_id, match_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);

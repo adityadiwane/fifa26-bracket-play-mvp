@@ -1,4 +1,4 @@
-import type { LatestMatch, LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
+import type { BracketLeaderboardRow, BracketPrediction, LatestMatch, LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -92,20 +92,10 @@ export async function getMyPredictions(leagueId: string, token: string) {
   return request<{ predictions: Prediction[] }>(`/api/league/${leagueId}/predictions/me`, {}, token);
 }
 
-export async function savePrediction(
-  matchId: string,
-  predictedOutcome: Outcome,
-  token: string,
-  predictedScore?: { home: number | null; away: number | null }
-) {
+export async function savePrediction(matchId: string, predictedOutcome: Outcome, token: string) {
   return request<{ saved: boolean }>('/api/predictions', {
     method: 'POST',
-    body: JSON.stringify({
-      matchId,
-      predictedOutcome,
-      predictedHomeScore: predictedScore?.home ?? null,
-      predictedAwayScore: predictedScore?.away ?? null
-    })
+    body: JSON.stringify({ matchId, predictedOutcome })
   }, token);
 }
 
@@ -113,18 +103,27 @@ export async function getLeaderboard(leagueId: string, token: string) {
   return request<{ leaderboard: LeaderboardRow[]; latestMatches: LatestMatch[] }>(`/api/league/${leagueId}/leaderboard`, {}, token);
 }
 
-export async function updateResult(
-  matchId: string,
-  actualOutcome: Outcome,
-  adminToken: string,
-  actualScore?: { home: number | null; away: number | null }
+export async function getMyBracket(leagueId: string, token: string) {
+  return request<{ predictions: BracketPrediction[]; doublesUsed: number; maxDoubles: number }>(`/api/league/${leagueId}/bracket/me`, {}, token);
+}
+
+export async function saveBracketPredictions(
+  predictions: Array<{ matchId: string; predictedOutcome: Outcome; isDoubled: boolean }>,
+  token: string
 ) {
+  return request<{ saved: boolean; count: number }>('/api/bracket/save', {
+    method: 'POST',
+    body: JSON.stringify({ predictions })
+  }, token);
+}
+
+export async function getBracketLeaderboard(leagueId: string, token: string) {
+  return request<{ leaderboard: BracketLeaderboardRow[] }>(`/api/league/${leagueId}/leaderboard/bracket`, {}, token);
+}
+
+export async function updateResult(matchId: string, actualOutcome: Outcome, adminToken: string) {
   return request<{ updated: boolean }>('/api/admin/matches/' + matchId + '/result', {
     method: 'POST',
-    body: JSON.stringify({
-      actualOutcome,
-      actualHomeScore: actualScore?.home ?? null,
-      actualAwayScore: actualScore?.away ?? null
-    })
+    body: JSON.stringify({ actualOutcome })
   }, adminToken);
 }

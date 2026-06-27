@@ -14,6 +14,8 @@ type Session = {
 };
 
 const OUTCOMES: Outcome[] = ['HOME_WIN', 'DRAW', 'AWAY_WIN'];
+const BRACKET_OUTCOMES: Outcome[] = ['HOME_WIN', 'AWAY_WIN'];
+const MAX_DOUBLE_TOKENS = 5;
 const SESSION_DAYS = 14;
 
 export default {
@@ -71,6 +73,21 @@ export default {
         return await getLeaderboard(request, env, leaderboard[1]);
       }
 
+      // Bracket endpoints
+      const bracketMe = path.match(/^\/api\/league\/([^/]+)\/bracket\/me$/);
+      if (request.method === 'GET' && bracketMe) {
+        return await listMyBracket(request, env, bracketMe[1]);
+      }
+
+      if (request.method === 'POST' && path === '/api/bracket/save') {
+        return await saveBracket(request, env);
+      }
+
+      const bracketLeaderboard = path.match(/^\/api\/league\/([^/]+)\/leaderboard\/bracket$/);
+      if (request.method === 'GET' && bracketLeaderboard) {
+        return await getBracketLeaderboard(request, env, bracketLeaderboard[1]);
+      }
+
       const adminResult = path.match(/^\/api\/admin\/matches\/([^/]+)\/result$/);
       if (request.method === 'POST' && adminResult) {
         return await updateMatchResult(request, env, adminResult[1]);
@@ -89,6 +106,8 @@ export default {
     }
   },
 };
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
 
 async function createLeague(request: Request, env: Env): Promise<Response> {
   const body = await readJson(request);
@@ -195,11 +214,13 @@ async function loginAdmin(request: Request, env: Env): Promise<Response> {
   return ok({ adminToken, leagueId: league.id, leagueName: league.name }, env);
 }
 
+// ─── Match Predictions (individual picks) ────────────────────────────────────
+
 async function listMatches(request: Request, env: Env, leagueId: string): Promise<Response> {
   await requireLeagueSession(request, env, leagueId);
-      const { results } = await env.DB.prepare(
+  const { results } = await env.DB.prepare(
     `SELECT id, fifa_match_no, stage, group_name, home_team, away_team, home_placeholder, away_placeholder,
-            kickoff_at, venue, status, actual_outcome, actual_home_score, actual_away_score, updated_at
+            kickoff_at, venue, status, actual_outcome, updated_at
        FROM matches
       ORDER BY datetime(kickoff_at), fifa_match_no`
   ).all();
@@ -221,21 +242,10 @@ async function listMyPredictions(request: Request, env: Env, leagueId: string): 
   if (!session.user_id) throw new AppError('User session required.', 401);
 
   const { results } = await env.DB.prepare(
-    `SELECT p.match_id, p.predicted_outcome, p.predicted_home_score, p.predicted_away_score, p.created_at, p.updated_at,
+    `SELECT p.match_id, p.predicted_outcome, p.created_at, p.updated_at,
             CASE
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
-              ELSE 0
-            END +
-            CASE
-              WHEN m.status = 'COMPLETED'
-               AND p.predicted_outcome = m.actual_outcome
-               AND p.predicted_home_score IS NOT NULL
-               AND p.predicted_away_score IS NOT NULL
-               AND m.actual_home_score IS NOT NULL
-               AND m.actual_away_score IS NOT NULL
-               AND p.predicted_home_score = m.actual_home_score
-               AND p.predicted_away_score = m.actual_away_score THEN 1
               ELSE 0
             END AS points_awarded
        FROM predictions p
@@ -253,8 +263,6 @@ async function savePrediction(request: Request, env: Env): Promise<Response> {
   const body = await readJson(request);
   const matchId = cleanString(body.matchId, 80);
   const predictedOutcome = cleanString(body.predictedOutcome, 20) as Outcome;
-  const predictedHomeScore = parseOptionalScore(body.predictedHomeScore, 'predictedHomeScore');
-  const predictedAwayScore = parseOptionalScore(body.predictedAwayScore, 'predictedAwayScore');
   if (!matchId) throw new AppError('matchId is required.', 400);
   validateOutcome(predictedOutcome);
 
@@ -270,7 +278,6 @@ async function savePrediction(request: Request, env: Env): Promise<Response> {
   if (predictedOutcome === 'DRAW' && !isGroupStage(match.stage)) {
     throw new AppError('Draw is only allowed for group-stage matches.', 400);
   }
-  validateScorePair(predictedHomeScore, predictedAwayScore, match.stage);
 
   const existing = await env.DB.prepare(
     `SELECT id FROM predictions WHERE league_id = ? AND user_id = ? AND match_id = ?`
@@ -278,22 +285,19 @@ async function savePrediction(request: Request, env: Env): Promise<Response> {
 
   if (existing) {
     await env.DB.prepare(
-      `UPDATE predictions
-          SET predicted_outcome = ?,
-              predicted_home_score = ?,
-              predicted_away_score = ?,
-              updated_at = datetime('now')
-        WHERE id = ?`
-    ).bind(predictedOutcome, predictedHomeScore, predictedAwayScore, existing.id).run();
+      `UPDATE predictions SET predicted_outcome = ?, updated_at = datetime('now') WHERE id = ?`
+    ).bind(predictedOutcome, existing.id).run();
   } else {
     await env.DB.prepare(
-      `INSERT INTO predictions (id, league_id, user_id, match_id, predicted_outcome, predicted_home_score, predicted_away_score)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(makeId('pred'), session.league_id, session.user_id, matchId, predictedOutcome, predictedHomeScore, predictedAwayScore).run();
+      `INSERT INTO predictions (id, league_id, user_id, match_id, predicted_outcome)
+       VALUES (?, ?, ?, ?, ?)`
+    ).bind(makeId('pred'), session.league_id, session.user_id, matchId, predictedOutcome).run();
   }
 
-  return ok({ saved: true, matchId, predictedOutcome, predictedHomeScore, predictedAwayScore }, env);
+  return ok({ saved: true, matchId, predictedOutcome }, env);
 }
+
+// ─── Match Prediction Leaderboard ────────────────────────────────────────────
 
 async function getLeaderboard(request: Request, env: Env, leagueId: string): Promise<Response> {
   await requireLeagueSession(request, env, leagueId);
@@ -329,32 +333,10 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
               ELSE 0
-            END), 0) +
-            COALESCE(SUM(CASE
-              WHEN m.status = 'COMPLETED'
-               AND p.predicted_outcome = m.actual_outcome
-               AND p.predicted_home_score IS NOT NULL
-               AND p.predicted_away_score IS NOT NULL
-               AND m.actual_home_score IS NOT NULL
-               AND m.actual_away_score IS NOT NULL
-               AND p.predicted_home_score = m.actual_home_score
-               AND p.predicted_away_score = m.actual_away_score THEN 1
-              ELSE 0
             END), 0) + u.bonus_points AS total_points,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL AND p.predicted_outcome != m.actual_outcome THEN 1 ELSE 0 END), 0) AS wrong_picks,
-            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed_picks,
-            COALESCE(SUM(CASE
-              WHEN m.status = 'COMPLETED'
-               AND p.predicted_outcome = m.actual_outcome
-               AND p.predicted_home_score IS NOT NULL
-               AND p.predicted_away_score IS NOT NULL
-               AND m.actual_home_score IS NOT NULL
-               AND m.actual_away_score IS NOT NULL
-               AND p.predicted_home_score = m.actual_home_score
-               AND p.predicted_away_score = m.actual_away_score THEN 1
-              ELSE 0
-            END), 0) AS score_bonus_points
+            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS completed_picks
        FROM users u
        LEFT JOIN predictions p ON p.user_id = u.id AND p.league_id = u.league_id
        LEFT JOIN matches m ON m.id = p.match_id
@@ -383,7 +365,7 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
   let lastPoints: number | null = null;
   let lastCorrect: number | null = null;
   let rank = 0;
-  const leaderboard = (results ?? []).map((row: any, index: number) => {
+  const leaderboard = (results ?? []).map((row: any) => {
     const points = Number(row.total_points ?? 0);
     const correct = Number(row.correct_picks ?? 0);
     if (points !== lastPoints || correct !== lastCorrect) {
@@ -401,44 +383,267 @@ async function getLeaderboard(request: Request, env: Env, leagueId: string): Pro
     return { ...row, latest_picks, rank, rank_change };
   });
 
-  return ok({ leaderboard, latestMatches: latestMatches }, env);
+  return ok({ leaderboard, latestMatches }, env);
 }
+
+// ─── Bracket Predictions ─────────────────────────────────────────────────────
+
+async function listMyBracket(request: Request, env: Env, leagueId: string): Promise<Response> {
+  const session = await requireLeagueSession(request, env, leagueId);
+  if (!session.user_id) throw new AppError('User session required.', 401);
+
+  const { results } = await env.DB.prepare(
+    `SELECT bp.match_id, bp.predicted_outcome, bp.is_doubled, bp.created_at, bp.updated_at,
+            CASE
+              WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome AND m.stage = 'FINAL'
+                THEN CASE WHEN bp.is_doubled = 1 THEN (2 + 4) * 2 ELSE 2 + 4 END
+              WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome
+                THEN CASE WHEN bp.is_doubled = 1 THEN 4 ELSE 2 END
+              ELSE 0
+            END AS points_awarded
+       FROM bracket_predictions bp
+       JOIN matches m ON m.id = bp.match_id
+      WHERE bp.league_id = ? AND bp.user_id = ?`
+  ).bind(leagueId, session.user_id).all();
+
+  const doublesUsed = (results ?? []).filter((r: any) => r.is_doubled === 1).length;
+
+  return ok({ predictions: results ?? [], doublesUsed, maxDoubles: MAX_DOUBLE_TOKENS }, env);
+}
+
+async function saveBracket(request: Request, env: Env): Promise<Response> {
+  const session = await requireSession(request, env, { admin: false });
+  if (!session.user_id) throw new AppError('User session required.', 401);
+
+  const body = await readJson(request);
+  const predictions: Array<{ matchId: string; predictedOutcome: string; isDoubled: boolean }> = body.predictions;
+  if (!Array.isArray(predictions) || predictions.length === 0) {
+    throw new AppError('predictions array is required.', 400);
+  }
+
+  // Validate double token count across ALL bracket picks (existing + new)
+  const incomingDoubles = predictions.filter((p) => p.isDoubled).length;
+  const incomingMatchIds = predictions.map((p) => p.matchId);
+
+  const { results: existingRows } = await env.DB.prepare(
+    `SELECT match_id, is_doubled FROM bracket_predictions WHERE league_id = ? AND user_id = ?`
+  ).bind(session.league_id, session.user_id).all();
+
+  const existingDoublesOutsideRequest = (existingRows ?? [])
+    .filter((r: any) => r.is_doubled === 1 && !incomingMatchIds.includes(r.match_id as string))
+    .length;
+
+  if (incomingDoubles + existingDoublesOutsideRequest > MAX_DOUBLE_TOKENS) {
+    throw new AppError(`You can only use ${MAX_DOUBLE_TOKENS} double tokens across the entire bracket.`, 400);
+  }
+
+  // Get bracket locking state
+  const lockState = await getBracketLockState(env);
+
+  const statements: D1PreparedStatement[] = [];
+
+  for (const pred of predictions) {
+    const matchId = cleanString(pred.matchId, 80);
+    const predictedOutcome = cleanString(pred.predictedOutcome, 20) as Outcome;
+    const isDoubled = pred.isDoubled ? 1 : 0;
+
+    if (!matchId) throw new AppError('matchId is required for each prediction.', 400);
+    if (!BRACKET_OUTCOMES.includes(predictedOutcome)) {
+      throw new AppError(`Invalid bracket outcome "${predictedOutcome}". Use HOME_WIN or AWAY_WIN.`, 400);
+    }
+
+    // Check locking per match
+    if (lockState.fullyLocked) {
+      throw new AppError('Bracket is fully locked. No changes allowed.', 409);
+    }
+    if (lockState.firstMatchLocked && matchId === lockState.firstMatchId) {
+      throw new AppError(`Match #${lockState.firstMatchNo} is locked (kickoff has passed). All other picks remain editable.`, 409);
+    }
+
+    const existing = await env.DB.prepare(
+      `SELECT id FROM bracket_predictions WHERE league_id = ? AND user_id = ? AND match_id = ?`
+    ).bind(session.league_id, session.user_id, matchId).first<{ id: string }>();
+
+    if (existing) {
+      statements.push(
+        env.DB.prepare(
+          `UPDATE bracket_predictions SET predicted_outcome = ?, is_doubled = ?, updated_at = datetime('now') WHERE id = ?`
+        ).bind(predictedOutcome, isDoubled, existing.id)
+      );
+    } else {
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO bracket_predictions (id, league_id, user_id, match_id, predicted_outcome, is_doubled)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(makeId('bpred'), session.league_id, session.user_id, matchId, predictedOutcome, isDoubled)
+      );
+    }
+  }
+
+  if (statements.length > 0) {
+    await env.DB.batch(statements);
+  }
+
+  return ok({ saved: true, count: statements.length }, env);
+}
+
+async function getBracketLockState(env: Env): Promise<{
+  fullyLocked: boolean;
+  firstMatchLocked: boolean;
+  firstMatchId: string | null;
+  firstMatchNo: number | null;
+  firstKickoff: string | null;
+  secondKickoff: string | null;
+}> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, fifa_match_no, kickoff_at FROM matches
+      WHERE stage = 'ROUND_OF_32'
+      ORDER BY datetime(kickoff_at) ASC, fifa_match_no ASC
+      LIMIT 2`
+  ).all();
+
+  if (!results || results.length === 0) {
+    return { fullyLocked: false, firstMatchLocked: false, firstMatchId: null, firstMatchNo: null, firstKickoff: null, secondKickoff: null };
+  }
+
+  const now = Date.now();
+  const first = results[0] as any;
+  const second = results.length > 1 ? results[1] as any : null;
+
+  const firstKickoff = first.kickoff_at as string;
+  const secondKickoff = second ? second.kickoff_at as string : null;
+  const firstMatchId = first.id as string;
+  const firstMatchNo = first.fifa_match_no as number;
+
+  const firstPassed = new Date(firstKickoff).getTime() <= now;
+  const secondPassed = secondKickoff ? new Date(secondKickoff).getTime() <= now : false;
+
+  return {
+    fullyLocked: secondPassed,
+    firstMatchLocked: firstPassed,
+    firstMatchId,
+    firstMatchNo,
+    firstKickoff,
+    secondKickoff,
+  };
+}
+
+// ─── Bracket Leaderboard ─────────────────────────────────────────────────────
+
+async function getBracketLeaderboard(request: Request, env: Env, leagueId: string): Promise<Response> {
+  await requireLeagueSession(request, env, leagueId);
+
+  const { results } = await env.DB.prepare(
+    `SELECT u.id AS user_id,
+            u.display_name,
+            COALESCE(SUM(CASE
+              WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome AND m.stage = 'FINAL'
+                THEN CASE WHEN bp.is_doubled = 1 THEN (2 + 4) * 2 ELSE 2 + 4 END
+              WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome
+                THEN CASE WHEN bp.is_doubled = 1 THEN 4 ELSE 2 END
+              ELSE 0
+            END), 0) AS total_points,
+            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
+            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND bp.id IS NOT NULL AND bp.predicted_outcome != m.actual_outcome THEN 1 ELSE 0 END), 0) AS wrong_picks,
+            COALESCE(SUM(CASE WHEN bp.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS total_picks,
+            COALESCE(SUM(CASE WHEN bp.is_doubled = 1 THEN 1 ELSE 0 END), 0) AS doubles_used
+       FROM users u
+       LEFT JOIN bracket_predictions bp ON bp.user_id = u.id AND bp.league_id = u.league_id
+       LEFT JOIN matches m ON m.id = bp.match_id
+      WHERE u.league_id = ?
+      GROUP BY u.id, u.display_name
+      ORDER BY total_points DESC, correct_picks DESC, lower(u.display_name) ASC`
+  ).bind(leagueId).all();
+
+  // Get each user's champion pick (Final match prediction)
+  const { results: championRows } = await env.DB.prepare(
+    `SELECT bp.user_id, bp.predicted_outcome,
+            m.home_team, m.away_team, m.home_placeholder, m.away_placeholder
+       FROM bracket_predictions bp
+       JOIN matches m ON m.id = bp.match_id
+      WHERE bp.league_id = ? AND m.stage = 'FINAL'`
+  ).bind(leagueId).all();
+
+  const championMap = new Map<string, string>();
+  for (const row of championRows ?? []) {
+    const userId = row.user_id as string;
+    const outcome = row.predicted_outcome as string;
+    const label = outcome === 'HOME_WIN'
+      ? labelFor(row.home_team as string | null, row.home_placeholder as string | null)
+      : labelFor(row.away_team as string | null, row.away_placeholder as string | null);
+    championMap.set(userId, label);
+  }
+
+  let lastPoints: number | null = null;
+  let rank = 0;
+  const leaderboard = (results ?? []).map((row: any) => {
+    const points = Number(row.total_points ?? 0);
+    if (points !== lastPoints) {
+      rank++;
+      lastPoints = points;
+    }
+    return {
+      ...row,
+      rank,
+      champion_pick: championMap.get(row.user_id) ?? null,
+    };
+  });
+
+  return ok({ leaderboard }, env);
+}
+
+// ─── Admin ───────────────────────────────────────────────────────────────────
 
 async function updateMatchResult(request: Request, env: Env, matchId: string): Promise<Response> {
   const session = await requireSession(request, env, { admin: true });
   const body = await readJson(request);
   const actualOutcome = cleanString(body.actualOutcome, 20) as Outcome;
-  const actualHomeScore = parseOptionalScore(body.actualHomeScore, 'actualHomeScore');
-  const actualAwayScore = parseOptionalScore(body.actualAwayScore, 'actualAwayScore');
   validateOutcome(actualOutcome);
 
   const match = await env.DB.prepare(
-    `SELECT id, stage, status, actual_outcome FROM matches WHERE id = ?`
-  ).bind(matchId).first<{ id: string; stage: string; status: string; actual_outcome: string | null }>();
+    `SELECT id, fifa_match_no, stage, status, actual_outcome, home_team, away_team, home_placeholder, away_placeholder
+       FROM matches WHERE id = ?`
+  ).bind(matchId).first<{
+    id: string; fifa_match_no: number; stage: string; status: string;
+    actual_outcome: string | null; home_team: string | null; away_team: string | null;
+    home_placeholder: string | null; away_placeholder: string | null;
+  }>();
 
   if (!match) throw new AppError('Match not found.', 404);
   if (actualOutcome === 'DRAW' && !isGroupStage(match.stage)) {
     throw new AppError('Draw is only allowed for group-stage matches.', 400);
   }
-  validateScorePair(actualHomeScore, actualAwayScore, match.stage);
 
   await snapshotRanks(env, session.league_id);
 
   const oldValue = JSON.stringify({ status: match.status, actualOutcome: match.actual_outcome });
   await env.DB.prepare(
-    `UPDATE matches
-        SET actual_outcome = ?,
-            actual_home_score = ?,
-            actual_away_score = ?,
-            status = 'COMPLETED',
-            updated_at = datetime('now')
-      WHERE id = ?`
-  ).bind(actualOutcome, actualHomeScore, actualAwayScore, matchId).run();
+    `UPDATE matches SET actual_outcome = ?, status = 'COMPLETED', updated_at = datetime('now') WHERE id = ?`
+  ).bind(actualOutcome, matchId).run();
 
   await env.DB.prepare(
     `INSERT INTO admin_audit_log (id, league_id, action, match_id, old_value, new_value)
      VALUES (?, ?, 'UPDATE_MATCH_RESULT', ?, ?, ?)`
-  ).bind(makeId('audit'), session.league_id, matchId, oldValue, JSON.stringify({ status: 'COMPLETED', actualOutcome, actualHomeScore, actualAwayScore })).run();
+  ).bind(makeId('audit'), session.league_id, matchId, oldValue, JSON.stringify({ status: 'COMPLETED', actualOutcome })).run();
+
+  if (!isGroupStage(match.stage)) {
+    const winnerTeam = actualOutcome === 'HOME_WIN'
+      ? (match.home_team ?? match.home_placeholder ?? '')
+      : (match.away_team ?? match.away_placeholder ?? '');
+    const loserTeam = actualOutcome === 'HOME_WIN'
+      ? (match.away_team ?? match.away_placeholder ?? '')
+      : (match.home_team ?? match.home_placeholder ?? '');
+
+    const winnerPlaceholder = `Winner Match ${match.fifa_match_no}`;
+    const loserPlaceholder = `Loser Match ${match.fifa_match_no}`;
+
+    await env.DB.batch([
+      env.DB.prepare(`UPDATE matches SET home_team = ?, updated_at = datetime('now') WHERE home_placeholder = ?`).bind(winnerTeam, winnerPlaceholder),
+      env.DB.prepare(`UPDATE matches SET away_team = ?, updated_at = datetime('now') WHERE away_placeholder = ?`).bind(winnerTeam, winnerPlaceholder),
+      env.DB.prepare(`UPDATE matches SET home_team = ?, updated_at = datetime('now') WHERE home_placeholder = ?`).bind(loserTeam, loserPlaceholder),
+      env.DB.prepare(`UPDATE matches SET away_team = ?, updated_at = datetime('now') WHERE away_placeholder = ?`).bind(loserTeam, loserPlaceholder),
+    ]);
+  }
 
   return ok({ updated: true, matchId, actualOutcome }, env);
 }
@@ -449,17 +654,6 @@ async function snapshotRanks(env: Env, leagueId: string): Promise<void> {
             COALESCE(SUM(CASE
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome AND m.actual_outcome = 'DRAW' THEN 2.5
               WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 2
-              ELSE 0
-            END), 0) +
-            COALESCE(SUM(CASE
-              WHEN m.status = 'COMPLETED'
-               AND p.predicted_outcome = m.actual_outcome
-               AND p.predicted_home_score IS NOT NULL
-               AND p.predicted_away_score IS NOT NULL
-               AND m.actual_home_score IS NOT NULL
-               AND m.actual_away_score IS NOT NULL
-               AND p.predicted_home_score = m.actual_home_score
-               AND p.predicted_away_score = m.actual_away_score THEN 1
               ELSE 0
             END), 0) + u.bonus_points AS total_points,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND p.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
@@ -490,6 +684,8 @@ async function snapshotRanks(env: Env, leagueId: string): Promise<void> {
 
   await env.DB.batch(updates);
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 async function findLeague(env: Env, leagueId?: unknown, inviteCode?: unknown): Promise<{ id: string; name: string; invite_code: string; admin_pin_hash: string }> {
   const id = cleanString(leagueId, 80);
@@ -547,35 +743,33 @@ function isGroupStage(stage: string): boolean {
   return stage.toUpperCase() === 'GROUP';
 }
 
+const FLAG_MAP: Record<string, string> = {
+  'Mexico': '🇲🇽', 'South Africa': '🇿🇦', 'South Korea': '🇰🇷', 'Czechia': '🇨🇿',
+  'Canada': '🇨🇦', 'Bosnia and Herzegovina': '🇧🇦', 'Qatar': '🇶🇦', 'Switzerland': '🇨🇭',
+  'Brazil': '🇧🇷', 'Morocco': '🇲🇦', 'Haiti': '🇭🇹', 'Scotland': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
+  'United States': '🇺🇸', 'Paraguay': '🇵🇾', 'Australia': '🇦🇺', 'Türkiye': '🇹🇷',
+  'Germany': '🇩🇪', 'Curaçao': '🇨🇼', 'Netherlands': '🇳🇱', 'Japan': '🇯🇵',
+  'Ivory Coast': '🇨🇮', 'Ecuador': '🇪🇨', 'Sweden': '🇸🇪', 'Tunisia': '🇹🇳',
+  'Spain': '🇪🇸', 'Cabo Verde': '🇨🇻', 'Belgium': '🇧🇪', 'Egypt': '🇪🇬',
+  'Saudi Arabia': '🇸🇦', 'Uruguay': '🇺🇾', 'Iran': '🇮🇷', 'New Zealand': '🇳🇿',
+  'France': '🇫🇷', 'Senegal': '🇸🇳', 'Iraq': '🇮🇶', 'Norway': '🇳🇴',
+  'Argentina': '🇦🇷', 'Algeria': '🇩🇿', 'Austria': '🇦🇹', 'Jordan': '🇯🇴',
+  'Portugal': '🇵🇹', 'DR Congo': '🇨🇩', 'England': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'Croatia': '🇭🇷',
+  'Ghana': '🇬🇭', 'Panama': '🇵🇦', 'Uzbekistan': '🇺🇿', 'Colombia': '🇨🇴',
+};
+
 function labelFor(team?: string | null, placeholder?: string | null): string {
   const cleanTeam = (team ?? '').trim();
   const cleanPlaceholder = (placeholder ?? '').trim();
-  return cleanTeam || cleanPlaceholder || 'TBD';
+  if (cleanTeam) {
+    const flag = FLAG_MAP[cleanTeam];
+    return flag ? `${flag} ${cleanTeam}` : cleanTeam;
+  }
+  return cleanPlaceholder || 'TBD';
 }
 
 function validateOutcome(outcome: Outcome): void {
   if (!OUTCOMES.includes(outcome)) throw new AppError('Invalid outcome. Use HOME_WIN, DRAW, or AWAY_WIN.', 400);
-}
-
-function parseOptionalScore(value: unknown, fieldName: string): number | null {
-  if (value === undefined || value === null || value === '') return null;
-
-  const score = typeof value === 'number' ? value : Number(value);
-  if (!Number.isInteger(score) || score < 0 || score > 99) {
-    throw new AppError(`${fieldName} must be a whole number from 0 to 99.`, 400);
-  }
-
-  return score;
-}
-
-function validateScorePair(homeScore: number | null, awayScore: number | null, stage: string): void {
-  if ((homeScore === null) !== (awayScore === null)) {
-    throw new AppError('Both home and away scores are required to predict a score.', 400);
-  }
-
-  if (homeScore !== null && awayScore !== null && !isGroupStage(stage) && homeScore === awayScore) {
-    throw new AppError('Knockout score predictions cannot be tied.', 400);
-  }
 }
 
 async function readJson(request: Request): Promise<any> {

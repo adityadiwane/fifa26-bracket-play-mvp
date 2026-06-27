@@ -71,34 +71,35 @@ fifa_match_no,stage,group_name,home_team,away_team,home_placeholder,away_placeho
 70,GROUP,K,DR Congo,Uzbekistan,,,2026-06-27T23:30:00Z,Mercedes-Benz Stadium
 71,GROUP,J,Algeria,Austria,,,2026-06-28T02:00:00Z,Arrowhead Stadium
 72,GROUP,J,Jordan,Argentina,,,2026-06-28T02:00:00Z,AT&T Stadium
-73,ROUND_OF_32,,,,"R32 Slot 1","R32 Slot 2",2026-06-28T19:00:00Z,TBD
-74,ROUND_OF_32,,,,"R32 Slot 3","R32 Slot 4",2026-06-28T23:00:00Z,TBD
-75,ROUND_OF_32,,,,"R32 Slot 5","R32 Slot 6",2026-06-29T19:00:00Z,TBD
-76,ROUND_OF_32,,,,"R32 Slot 7","R32 Slot 8",2026-06-29T23:00:00Z,TBD
-77,ROUND_OF_32,,,,"R32 Slot 9","R32 Slot 10",2026-06-30T19:00:00Z,TBD
-78,ROUND_OF_32,,,,"R32 Slot 11","R32 Slot 12",2026-06-30T23:00:00Z,TBD
-79,ROUND_OF_32,,,,"R32 Slot 13","R32 Slot 14",2026-07-01T19:00:00Z,TBD
-80,ROUND_OF_32,,,,"R32 Slot 15","R32 Slot 16",2026-07-01T23:00:00Z,TBD
-81,ROUND_OF_32,,,,"R32 Slot 17","R32 Slot 18",2026-07-02T19:00:00Z,TBD
-82,ROUND_OF_32,,,,"R32 Slot 19","R32 Slot 20",2026-07-02T23:00:00Z,TBD
-83,ROUND_OF_32,,,,"R32 Slot 21","R32 Slot 22",2026-07-03T19:00:00Z,TBD
-84,ROUND_OF_32,,,,"R32 Slot 23","R32 Slot 24",2026-07-03T23:00:00Z,TBD
-85,ROUND_OF_32,,,,"R32 Slot 25","R32 Slot 26",2026-07-04T19:00:00Z,TBD
-86,ROUND_OF_32,,,,"R32 Slot 27","R32 Slot 28",2026-07-04T23:00:00Z,TBD
-87,ROUND_OF_32,,,,"R32 Slot 29","R32 Slot 30",2026-07-05T19:00:00Z,TBD
-88,ROUND_OF_32,,,,"R32 Slot 31","R32 Slot 32",2026-07-05T23:00:00Z,TBD
-89,ROUND_OF_16,,,,"Winner Match 73","Winner Match 74",2026-07-06T19:00:00Z,TBD
-90,ROUND_OF_16,,,,"Winner Match 75","Winner Match 76",2026-07-06T23:00:00Z,TBD
-91,ROUND_OF_16,,,,"Winner Match 77","Winner Match 78",2026-07-07T19:00:00Z,TBD
-92,ROUND_OF_16,,,,"Winner Match 79","Winner Match 80",2026-07-07T23:00:00Z,TBD
-93,ROUND_OF_16,,,,"Winner Match 81","Winner Match 82",2026-07-08T19:00:00Z,TBD
-94,ROUND_OF_16,,,,"Winner Match 83","Winner Match 84",2026-07-08T23:00:00Z,TBD
-95,ROUND_OF_16,,,,"Winner Match 85","Winner Match 86",2026-07-09T19:00:00Z,TBD
-96,ROUND_OF_16,,,,"Winner Match 87","Winner Match 88",2026-07-09T23:00:00Z,TBD
-97,QUARTER_FINAL,,,,"Winner Match 89","Winner Match 90",2026-07-10T19:00:00Z,TBD
-98,QUARTER_FINAL,,,,"Winner Match 91","Winner Match 92",2026-07-10T23:00:00Z,TBD
-99,QUARTER_FINAL,,,,"Winner Match 93","Winner Match 94",2026-07-11T19:00:00Z,TBD
-100,QUARTER_FINAL,,,,"Winner Match 95","Winner Match 96",2026-07-11T23:00:00Z,TBD
-101,SEMI_FINAL,,,,"Winner Match 97","Winner Match 98",2026-07-14T00:00:00Z,TBD
-102,SEMI_FINAL,,,,"Winner Match 99","Winner Match 100",2026-07-15T00:00:00Z,TBD
-103,FINAL,,,,"Winner Match 101","Winner Match 102",2026-07-19T19:00:00Z,TBD
+73,ROUND_OF_32,,South Africa,Canada,2nd Group A,2nd Group B,2026-06-28T19:00:00Z,SoFi Stadium
+74,ROUND_OF_32,,Germany,,1st Group E,3rd Group A/B/C/D/F,2026-06-29T20:30:00Z,Gillette Stadium
+75,ROUND_OF_32,,Netherlands,Morocco,1st Group F,2nd Group C,2026-06-30T01:00:00Z,Estadio BBVA
+76,ROUND_OF_32,,Brazil,Japan,1st Group C,2nd Group F,2026-06-29T17:00:00Z,NRG Stadium
+77,ROUND_OF_32,,France,,1st Group I,3rd Group C/D/F/G/H,2026-06-30T21:00:00Z,MetLife Stadium
+78,ROUND_OF_32,,Ivory Coast,Norway,2nd Group E,2nd Group I,2026-06-30T17:00:00Z,AT&T Stadium
+79,ROUND_OF_32,,Mexico,,1st Group A,3rd Group C/E/F/H/I,2026-07-01T01:00:00Z,Estadio Azteca
+80,ROUND_OF_32,,,,1st Group L,3rd Group E/H/I/J/K,2026-07-01T16:00:00Z,Mercedes-Benz Stadium
+81,ROUND_OF_32,,United States,Bosnia and Herzegovina,1st Group D,3rd Group B/E/F/I/J,2026-07-02T00:00:00Z,Levi's Stadium
+82,ROUND_OF_32,,,,1st Group G,3rd Group A/E/H/I/J,2026-07-01T20:00:00Z,Lumen Field
+83,ROUND_OF_32,,,,2nd Group K,2nd Group L,2026-07-02T23:00:00Z,BMO Field
+84,ROUND_OF_32,,,,1st Group H,2nd Group J,2026-07-02T19:00:00Z,SoFi Stadium
+85,ROUND_OF_32,,Switzerland,,1st Group B,3rd Group E/F/G/I/J,2026-07-03T03:00:00Z,BC Place
+86,ROUND_OF_32,,Argentina,,1st Group J,2nd Group H,2026-07-03T22:00:00Z,Hard Rock Stadium
+87,ROUND_OF_32,,,,1st Group K,3rd Group D/E/I/J/L,2026-07-04T01:30:00Z,Arrowhead Stadium
+88,ROUND_OF_32,,Australia,,2nd Group D,2nd Group G,2026-07-03T18:00:00Z,AT&T Stadium
+89,ROUND_OF_16,,,,"Winner Match 74","Winner Match 77",2026-07-04T16:00:00Z,Lincoln Financial Field
+90,ROUND_OF_16,,,,"Winner Match 73","Winner Match 75",2026-07-04T20:00:00Z,NRG Stadium
+91,ROUND_OF_16,,,,"Winner Match 76","Winner Match 78",2026-07-05T20:00:00Z,MetLife Stadium
+92,ROUND_OF_16,,,,"Winner Match 79","Winner Match 80",2026-07-05T23:00:00Z,Estadio Azteca
+93,ROUND_OF_16,,,,"Winner Match 83","Winner Match 84",2026-07-06T20:00:00Z,AT&T Stadium
+94,ROUND_OF_16,,,,"Winner Match 81","Winner Match 82",2026-07-06T23:00:00Z,Lumen Field
+95,ROUND_OF_16,,,,"Winner Match 86","Winner Match 88",2026-07-07T20:00:00Z,Mercedes-Benz Stadium
+96,ROUND_OF_16,,,,"Winner Match 85","Winner Match 87",2026-07-07T23:00:00Z,BC Place
+97,QUARTER_FINAL,,,,"Winner Match 89","Winner Match 90",2026-07-09T20:00:00Z,Gillette Stadium
+98,QUARTER_FINAL,,,,"Winner Match 93","Winner Match 94",2026-07-10T19:00:00Z,SoFi Stadium
+99,QUARTER_FINAL,,,,"Winner Match 91","Winner Match 92",2026-07-11T21:00:00Z,Hard Rock Stadium
+100,QUARTER_FINAL,,,,"Winner Match 95","Winner Match 96",2026-07-12T01:00:00Z,Arrowhead Stadium
+101,SEMI_FINAL,,,,"Winner Match 97","Winner Match 98",2026-07-14T19:00:00Z,AT&T Stadium
+102,SEMI_FINAL,,,,"Winner Match 99","Winner Match 100",2026-07-15T19:00:00Z,Mercedes-Benz Stadium
+103,THIRD_PLACE,,,,"Loser Match 101","Loser Match 102",2026-07-18T21:00:00Z,Hard Rock Stadium
+104,FINAL,,,,"Winner Match 101","Winner Match 102",2026-07-19T19:00:00Z,MetLife Stadium
