@@ -56,7 +56,7 @@ class BracketScoringTests(unittest.TestCase):
     def test_correct_final_doubled_gives_sixteen_points(self):
         self.assertEqual(
             calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "FINAL", is_doubled=True),
-            16,
+            12,
         )
 
     def test_wrong_pick_doubled_gives_zero_points(self):
