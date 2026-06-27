@@ -4,16 +4,19 @@ import {
   adminLogin,
   ApiError,
   createLeague,
+  getBracketLeaderboard,
   getLeaderboard,
   getMatches,
+  getMyBracket,
   getMyPredictions,
   joinLeague,
   loginUser,
   lookupLeague,
   savePrediction,
+  saveBracketPredictions,
   updateResult
 } from './api';
-import type { LatestMatch, LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
+import type { BracketLeaderboardRow, BracketPrediction, LatestMatch, LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
 import './styles.css';
 
 const STORAGE_KEY = 'fifa26.session.v1';
@@ -21,10 +24,18 @@ const JOIN_PIN_PLACEHOLDER = 'Create your PIN. Remember it. No option to reset i
 const LOGIN_PIN_PLACEHOLDER = 'Enter your PIN';
 const PLACEHOLDER_BASE_FONT_SIZE = 16;
 const PLACEHOLDER_MIN_FONT_SIZE = 8;
+const KNOCKOUT_STAGES = ['ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'THIRD_PLACE', 'FINAL'];
+const MAX_DOUBLES = 5;
+
+type AppTab = 'predictions' | 'bracket' | 'leaderboard' | 'admin';
+type BracketDraft = {
+  outcome?: Outcome;
+  isDoubled: boolean;
+};
 
 function App() {
   const [session, setSession] = useState<SessionState | null>(() => loadSession());
-  const [tab, setTab] = useState<'predictions' | 'leaderboard' | 'admin'>('predictions');
+  const [tab, setTab] = useState<AppTab>('predictions');
 
   function persistSession(next: SessionState | null) {
     setSession(next);
@@ -49,16 +60,20 @@ function App() {
 
       <nav className="tabs">
         <button className={tab === 'predictions' ? 'active' : ''} onClick={() => setTab('predictions')}>Predictions</button>
+        <button className={tab === 'bracket' ? 'active' : ''} onClick={() => setTab('bracket')}>Bracket</button>
         <button className={tab === 'leaderboard' ? 'active' : ''} onClick={() => setTab('leaderboard')}>Leaderboard</button>
         <button className={tab === 'admin' ? 'active' : ''} onClick={() => setTab('admin')}>Admin</button>
       </nav>
 
       {tab === 'predictions' && <PredictionsPage session={session} />}
+      {tab === 'bracket' && <BracketPage session={session} />}
       {tab === 'leaderboard' && <LeaderboardPage session={session} />}
       {tab === 'admin' && <AdminPage session={session} onSession={persistSession} />}
     </div>
   );
 }
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
 
 function AuthScreen({ onSession }: { onSession: (session: SessionState) => void }) {
   const [mode, setMode] = useState<'join' | 'login' | 'create'>('join');
@@ -157,6 +172,8 @@ function AuthScreen({ onSession }: { onSession: (session: SessionState) => void 
     </main>
   );
 }
+
+// ─── Predictions Page (individual match picks) ───────────────────────────────
 
 function PredictionsPage({ session }: { session: SessionState }) {
   const [matches, setMatches] = useState<Match[]>([]);
@@ -270,6 +287,328 @@ function PredictionsPage({ session }: { session: SessionState }) {
   );
 }
 
+// ─── Bracket Page ────────────────────────────────────────────────────────────
+
+type BracketEntry = {
+  match: Match;
+  homeLabel: string;
+  awayLabel: string;
+};
+
+function BracketPage({ session }: { session: SessionState }) {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [draft, setDraft] = useState<Record<string, BracketDraft>>({});
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [lockStatus, setLockStatus] = useState<'open' | 'phase1' | 'locked'>('open');
+
+  useEffect(() => {
+    async function load() {
+      setError('');
+      try {
+        const [matchResponse, bracketResponse] = await Promise.all([
+          getMatches(session.leagueId, session.token),
+          getMyBracket(session.leagueId, session.token)
+        ]);
+        setMatches(matchResponse.matches);
+
+        const nextDraft: Record<string, BracketDraft> = {};
+        for (const bp of bracketResponse.predictions) {
+          nextDraft[bp.match_id] = {
+            outcome: bp.predicted_outcome,
+            isDoubled: bp.is_doubled === 1,
+          };
+        }
+        setDraft(nextDraft);
+
+        // Determine lock status from R32 kickoffs (sorted chronologically)
+        const r32Matches = matchResponse.matches
+          .filter((m: Match) => m.stage === 'ROUND_OF_32')
+          .sort((a: Match, b: Match) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime());
+
+        if (r32Matches.length >= 2) {
+          const now = Date.now();
+          const secondKickoff = new Date(r32Matches[1].kickoff_at).getTime();
+          const firstKickoff = new Date(r32Matches[0].kickoff_at).getTime();
+          if (now >= secondKickoff) setLockStatus('locked');
+          else if (now >= firstKickoff) setLockStatus('phase1');
+          else setLockStatus('open');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load bracket.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    void load();
+  }, [session.leagueId, session.token]);
+
+  const bracketRounds = useMemo(() => buildBracketRounds(matches, draft), [matches, draft]);
+  const knockoutEntries = useMemo(() => flattenBracketRounds(bracketRounds), [bracketRounds]);
+
+  const r32Matches = useMemo(() =>
+    matches.filter((m) => m.stage === 'ROUND_OF_32').sort((a, b) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime()),
+    [matches]
+  );
+  const firstR32Id = r32Matches[0]?.id ?? null;
+
+
+  const completedPicks = knockoutEntries.filter(({ match }) => draft[match.id]?.outcome).length;
+  const doublesUsed = Object.values(draft).filter((d) => d.isDoubled).length;
+
+  async function persistPick(matchId: string, outcome: Outcome, isDoubled: boolean) {
+    try {
+      await saveBracketPredictions([{ matchId, predictedOutcome: outcome, isDoubled }], session.token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save pick.');
+    }
+  }
+
+  function updateDraft(matchId: string, update: Partial<BracketDraft>) {
+    setMessage('');
+    setError('');
+    setDraft((prev) => {
+      const next = {
+        outcome: prev[matchId]?.outcome,
+        isDoubled: prev[matchId]?.isDoubled ?? false,
+        ...update
+      };
+      if (next.outcome) persistPick(matchId, next.outcome, next.isDoubled);
+      return { ...prev, [matchId]: next };
+    });
+  }
+
+  function toggleDouble(matchId: string) {
+    setDraft((prev) => {
+      const current = prev[matchId]?.isDoubled ?? false;
+      if (!current && doublesUsed >= MAX_DOUBLES) return prev;
+      const next = {
+        outcome: prev[matchId]?.outcome,
+        isDoubled: !current,
+      };
+      if (next.outcome) persistPick(matchId, next.outcome, next.isDoubled);
+      return { ...prev, [matchId]: next };
+    });
+  }
+
+
+
+  if (loading) return <Loading />;
+
+  if (knockoutEntries.length === 0) {
+    return (
+      <section className="panel wide">
+        <p className="eyebrow">Knockout bracket</p>
+        <h2>Round of 32 predictions</h2>
+        <div className="empty">No knockout matches are available yet. Seed Round of 32 through Final matches to enable this tab.</div>
+      </section>
+    );
+  }
+
+  const lockBannerLines = lockStatus === 'locked'
+    ? ['Bracket is fully locked. No changes allowed.']
+    : lockStatus === 'phase1'
+      ? [
+          `Match #${r32Matches[0]?.fifa_match_no} is locked (kickoff passed).`,
+          `All remaining picks lock when Match #${r32Matches[1]?.fifa_match_no} kicks off (${formatDate(r32Matches[1]?.kickoff_at)}).`
+        ]
+      : r32Matches.length >= 2
+        ? [
+            `First R32 pick (Match #${r32Matches[0]?.fifa_match_no}) must be locked in before ${formatDate(r32Matches[0].kickoff_at)}.`,
+            `All other bracket picks can be changed until Match #${r32Matches[1]?.fifa_match_no} kicks off (${formatDate(r32Matches[1].kickoff_at)}).`
+          ]
+        : ['Bracket open'];
+
+  return (
+    <section className="bracket-section">
+      <div className="section-header">
+        <div>
+          <p className="eyebrow">Knockout bracket</p>
+          <h2>Round of 32 to World Champion</h2>
+        </div>
+        <div className="bracket-actions">
+          <span>{completedPicks}/{knockoutEntries.length} picked</span>
+          <span className="double-counter">{doublesUsed}/{MAX_DOUBLES} doubles</span>
+        </div>
+      </div>
+
+      <div className={`lock-banner ${lockStatus}`}>
+        {lockBannerLines.map((line, i) => <p key={i}>{line}</p>)}
+      </div>
+      {message && <div className="success">{message}</div>}
+      {error && <div className="error">{error}</div>}
+
+      <div className="bracket-scroll">
+        <div className="bracket-board">
+          <BracketSide
+            side="left"
+            entries={[
+              bracketRounds.round32.slice(0, 8),
+              bracketRounds.round16.slice(0, 4),
+              bracketRounds.quarters.slice(0, 2),
+              bracketRounds.semis.slice(0, 1)
+            ]}
+            draft={draft}
+            lockStatus={lockStatus}
+            firstR32Id={firstR32Id}
+            doublesUsed={doublesUsed}
+            onChange={updateDraft}
+            onToggleDouble={toggleDouble}
+          />
+
+          <div className="final-column">
+            <p className="round-label">Final</p>
+            {bracketRounds.final[0] && (
+              <BracketMatchCard
+                entry={bracketRounds.final[0]}
+                draft={draft[bracketRounds.final[0].match.id]}
+                locked={lockStatus === 'locked'}
+                doublesUsed={doublesUsed}
+                onChange={(update) => updateDraft(bracketRounds.final[0].match.id, update)}
+                onToggleDouble={() => toggleDouble(bracketRounds.final[0].match.id)}
+              />
+            )}
+            <div className="champion-box">
+              <span>Champion</span>
+              <strong>{bracketRounds.final[0] ? selectedWinnerLabel(bracketRounds.final[0], draft) : 'TBD'}</strong>
+            </div>
+            {bracketRounds.thirdPlace[0] && (
+              <div className="third-place-box">
+                <p className="round-label">3rd Place</p>
+                <BracketMatchCard
+                  entry={bracketRounds.thirdPlace[0]}
+                  draft={draft[bracketRounds.thirdPlace[0].match.id]}
+                  locked={lockStatus === 'locked'}
+                  doublesUsed={doublesUsed}
+                  onChange={(update) => updateDraft(bracketRounds.thirdPlace[0].match.id, update)}
+                  onToggleDouble={() => toggleDouble(bracketRounds.thirdPlace[0].match.id)}
+                />
+              </div>
+            )}
+          </div>
+
+          <BracketSide
+            side="right"
+            entries={[
+              bracketRounds.semis.slice(1, 2),
+              bracketRounds.quarters.slice(2, 4),
+              bracketRounds.round16.slice(4, 8),
+              bracketRounds.round32.slice(8, 16)
+            ]}
+            draft={draft}
+            lockStatus={lockStatus}
+            firstR32Id={firstR32Id}
+            doublesUsed={doublesUsed}
+            onChange={updateDraft}
+            onToggleDouble={toggleDouble}
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function BracketSide({ side, entries, draft, lockStatus, firstR32Id, doublesUsed, onChange, onToggleDouble }: {
+  side: 'left' | 'right';
+  entries: BracketEntry[][];
+  draft: Record<string, BracketDraft>;
+  lockStatus: 'open' | 'phase1' | 'locked';
+  firstR32Id: string | null;
+  doublesUsed: number;
+  onChange: (matchId: string, update: Partial<BracketDraft>) => void;
+  onToggleDouble: (matchId: string) => void;
+}) {
+  const labels = side === 'left'
+    ? ['Round of 32', 'Round of 16', 'Quarter Finals', 'Semi Finals']
+    : ['Semi Finals', 'Quarter Finals', 'Round of 16', 'Round of 32'];
+
+  return (
+    <div className={`bracket-side ${side}`}>
+      {entries.map((roundEntries, index) => (
+        <div className="bracket-round" key={`${side}-${labels[index]}`}>
+          <p className="round-label">{labels[index]}</p>
+          <div className="round-stack">
+            {roundEntries.map((entry) => {
+              const isLocked = lockStatus === 'locked' || (lockStatus === 'phase1' && entry.match.id === firstR32Id);
+              return (
+                <BracketMatchCard
+                  key={entry.match.id}
+                  entry={entry}
+                  draft={draft[entry.match.id]}
+                  locked={isLocked}
+                  doublesUsed={doublesUsed}
+                  onChange={(update) => onChange(entry.match.id, update)}
+                  onToggleDouble={() => onToggleDouble(entry.match.id)}
+                />
+              );
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BracketMatchCard({ entry, draft, locked, doublesUsed, onChange, onToggleDouble }: {
+  entry: BracketEntry;
+  draft?: BracketDraft;
+  locked: boolean;
+  doublesUsed: number;
+  onChange: (update: Partial<BracketDraft>) => void;
+  onToggleDouble: () => void;
+}) {
+  const selected = draft?.outcome;
+  const isDoubled = draft?.isDoubled ?? false;
+  const canDouble = isDoubled || doublesUsed < MAX_DOUBLES;
+
+  const isCompleted = entry.match.status === 'COMPLETED';
+  const isCorrect = isCompleted && selected && selected === entry.match.actual_outcome;
+  const isWrong = isCompleted && selected && selected !== entry.match.actual_outcome;
+
+  const resultClass = isCorrect ? 'result-correct' : isWrong ? 'result-wrong' : '';
+
+  return (
+    <article className={`bracket-match ${locked ? 'locked' : ''} ${isDoubled ? 'doubled' : ''} ${resultClass}`}>
+      <div className="bracket-match-meta">
+        <span>#{entry.match.fifa_match_no}</span>
+        <span>{formatStage(entry.match.stage)}</span>
+        {isCorrect && <span className="result-badge correct">&#10003;</span>}
+        {isWrong && <span className="result-badge wrong">&#10007;</span>}
+      </div>
+
+      <button
+        type="button"
+        className={selected === 'HOME_WIN' ? 'bracket-team selected' : 'bracket-team'}
+        disabled={locked}
+        onClick={() => onChange({ outcome: 'HOME_WIN' })}
+      >
+        <span>{entry.homeLabel}</span>
+      </button>
+      <button
+        type="button"
+        className={selected === 'AWAY_WIN' ? 'bracket-team selected' : 'bracket-team'}
+        disabled={locked}
+        onClick={() => onChange({ outcome: 'AWAY_WIN' })}
+      >
+        <span>{entry.awayLabel}</span>
+      </button>
+
+      <button
+        type="button"
+        className={`double-toggle ${isDoubled ? 'active' : ''}`}
+        disabled={locked || (!isDoubled && !canDouble)}
+        onClick={onToggleDouble}
+        title={isDoubled ? 'Remove double' : 'Use a double token (2x points if correct)'}
+      >
+        2x {isDoubled ? '\u2713' : ''}
+      </button>
+    </article>
+  );
+}
+
+// ─── Match Card ──────────────────────────────────────────────────────────────
+
 function MatchCard({ match, selected, points, onPick }: {
   match: Match;
   selected?: Outcome;
@@ -330,7 +669,30 @@ function OutcomeButton({ outcome, label, selected, disabled, onClick }: {
   );
 }
 
+// ─── Leaderboard Page (with sub-tabs) ────────────────────────────────────────
+
 function LeaderboardPage({ session }: { session: SessionState }) {
+  const [subTab, setSubTab] = useState<'match' | 'bracket'>('match');
+
+  return (
+    <section className="panel wide">
+      <div className="section-header">
+        <div>
+          <p className="eyebrow">Live standings</p>
+          <h2>Leaderboard</h2>
+        </div>
+      </div>
+      <div className="segmented leaderboard-tabs">
+        <button className={subTab === 'match' ? 'active' : ''} onClick={() => setSubTab('match')}>Match Predictions</button>
+        <button className={subTab === 'bracket' ? 'active' : ''} onClick={() => setSubTab('bracket')}>Bracket Predictions</button>
+      </div>
+      {subTab === 'match' && <MatchLeaderboard session={session} />}
+      {subTab === 'bracket' && <BracketLeaderboard session={session} />}
+    </section>
+  );
+}
+
+function MatchLeaderboard({ session }: { session: SessionState }) {
   const [rows, setRows] = useState<LeaderboardRow[]>([]);
   const [latestMatches, setLatestMatches] = useState<LatestMatch[]>([]);
   const [error, setError] = useState('');
@@ -354,20 +716,14 @@ function LeaderboardPage({ session }: { session: SessionState }) {
   if (loading) return <Loading />;
 
   function pickLabel(match: LatestMatch, pick?: Outcome | null): string {
-    if (!pick) return '–';
-    if (pick === 'HOME_WIN') return match.home_label;
-    if (pick === 'AWAY_WIN') return match.away_label;
+    if (!pick) return '\u2013';
+    if (pick === 'HOME_WIN') return stripEmoji(match.home_label);
+    if (pick === 'AWAY_WIN') return stripEmoji(match.away_label);
     return 'Draw';
   }
 
   return (
-    <section className="panel wide">
-      <div className="section-header">
-        <div>
-          <p className="eyebrow">Live standings</p>
-          <h2>Leaderboard</h2>
-        </div>
-      </div>
+    <>
       {error && <div className="error">{error}</div>}
       <div className="table-wrap">
         <table>
@@ -375,9 +731,9 @@ function LeaderboardPage({ session }: { session: SessionState }) {
             <tr>
               <th>Rank</th><th>Player</th><th>Points</th>
               {latestMatches.map((m) => (
-                <th key={m.id}>{m.home_label.slice(0, 3).toUpperCase()} vs {m.away_label.slice(0, 3).toUpperCase()}</th>
+                <th key={m.id}>{abbreviateLabel(m.home_label)} vs {abbreviateLabel(m.away_label)}</th>
               ))}
-              <th>Correct</th><th>Wrong</th><th>Bonus</th>
+              <th>Correct</th><th>Wrong</th>
             </tr>
           </thead>
           <tbody>
@@ -391,16 +747,68 @@ function LeaderboardPage({ session }: { session: SessionState }) {
                 ))}
                 <td>{row.correct_picks}</td>
                 <td>{row.wrong_picks}</td>
-                <td>{row.bonus_points}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
       {rows.length === 0 && <div className="empty">No players have joined yet.</div>}
-    </section>
+    </>
   );
 }
+
+function BracketLeaderboard({ session }: { session: SessionState }) {
+  const [rows, setRows] = useState<BracketLeaderboardRow[]>([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const response = await getBracketLeaderboard(session.leagueId, session.token);
+        setRows(response.leaderboard);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load bracket leaderboard.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    void load();
+  }, [session.leagueId, session.token]);
+
+  if (loading) return <Loading />;
+
+  return (
+    <>
+      {error && <div className="error">{error}</div>}
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th><th>Player</th><th>Points</th><th>Correct</th><th>Wrong</th><th>Doubles</th><th>Champion</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.user_id}>
+                <td>{row.rank}</td>
+                <td>{row.display_name}</td>
+                <td><strong>{row.total_points}</strong></td>
+                <td>{row.correct_picks}</td>
+                <td>{row.wrong_picks}</td>
+                <td>{row.doubles_used}/{MAX_DOUBLES}</td>
+                <td>{row.champion_pick ?? '\u2013'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length === 0 && <div className="empty">No bracket predictions yet.</div>}
+    </>
+  );
+}
+
+// ─── Admin Page ──────────────────────────────────────────────────────────────
 
 function AdminPage({ session, onSession }: { session: SessionState; onSession: (session: SessionState) => void }) {
   const [adminPin, setAdminPin] = useState('');
@@ -493,6 +901,8 @@ function AdminPage({ session, onSession }: { session: SessionState; onSession: (
   );
 }
 
+// ─── Shared Components ───────────────────────────────────────────────────────
+
 function AutoResizeInput({ style, placeholder, value, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { placeholder: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [placeholderFontSize, setPlaceholderFontSize] = useState(PLACEHOLDER_BASE_FONT_SIZE);
@@ -551,6 +961,8 @@ function Loading() {
   return <div className="panel">Loading...</div>;
 }
 
+// ─── Utilities ───────────────────────────────────────────────────────────────
+
 function loadSession(): SessionState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -605,10 +1017,147 @@ function formatStage(stage: string, groupName?: string | null) {
   return stage.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function abbreviateLabel(label: string): string {
+  const withoutEmoji = label.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u{E0061}-\u{E007A}\u{E007F}\u200D\uFE0F]/gu, '').trim();
+  return withoutEmoji.slice(0, 3).toUpperCase();
+}
+
+function stripEmoji(label: string): string {
+  return label.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}\u{E0061}-\u{E007A}\u{E007F}\u200D\uFE0F]/gu, '').trim();
+}
+
 function outcomeLabel(outcome: Outcome, match: Match) {
   if (outcome === 'HOME_WIN') return match.home_label;
   if (outcome === 'AWAY_WIN') return match.away_label;
   return 'Draw';
+}
+
+function isKnockoutMatch(match: Match) {
+  return KNOCKOUT_STAGES.includes(match.stage);
+}
+
+function parseFeederMatchNo(placeholder: string | null | undefined): number | null {
+  if (!placeholder) return null;
+  const m = placeholder.match(/(?:Winner|Loser)\s+Match\s+(\d+)/i);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function buildBracketRounds(matches: Match[], draft: Record<string, BracketDraft>) {
+  const knockout = matches.filter(isKnockoutMatch);
+  const byNo = new Map<number, Match>();
+  knockout.forEach((m) => byNo.set(m.fifa_match_no, m));
+
+  const finalMatch = knockout.find((m) => m.stage === 'FINAL');
+  if (!finalMatch) {
+    return { round32: [], round16: [], quarters: [], semis: [], final: [], thirdPlace: [] };
+  }
+
+  const semiHomeNo = parseFeederMatchNo(finalMatch.home_placeholder);
+  const semiAwayNo = parseFeederMatchNo(finalMatch.away_placeholder);
+  const leftSemi = semiHomeNo ? byNo.get(semiHomeNo) : undefined;
+  const rightSemi = semiAwayNo ? byNo.get(semiAwayNo) : undefined;
+
+  function orderSide(semiMatch: Match | undefined): { r32: Match[]; r16: Match[]; qf: Match[]; sf: Match[] } {
+    if (!semiMatch) return { r32: [], r16: [], qf: [], sf: [] };
+    const qfHomeNo = parseFeederMatchNo(semiMatch.home_placeholder);
+    const qfAwayNo = parseFeederMatchNo(semiMatch.away_placeholder);
+    const qf1 = qfHomeNo ? byNo.get(qfHomeNo) : undefined;
+    const qf2 = qfAwayNo ? byNo.get(qfAwayNo) : undefined;
+
+    function orderQfBranch(qfMatch: Match | undefined): { r32: Match[]; r16: Match[] } {
+      if (!qfMatch) return { r32: [], r16: [] };
+      const r16HomeNo = parseFeederMatchNo(qfMatch.home_placeholder);
+      const r16AwayNo = parseFeederMatchNo(qfMatch.away_placeholder);
+      const r16a = r16HomeNo ? byNo.get(r16HomeNo) : undefined;
+      const r16b = r16AwayNo ? byNo.get(r16AwayNo) : undefined;
+
+      function orderR16Branch(r16Match: Match | undefined): Match[] {
+        if (!r16Match) return [];
+        const r32HomeNo = parseFeederMatchNo(r16Match.home_placeholder);
+        const r32AwayNo = parseFeederMatchNo(r16Match.away_placeholder);
+        const r32a = r32HomeNo ? byNo.get(r32HomeNo) : undefined;
+        const r32b = r32AwayNo ? byNo.get(r32AwayNo) : undefined;
+        return [r32a, r32b].filter(Boolean) as Match[];
+      }
+
+      return {
+        r32: [...orderR16Branch(r16a), ...orderR16Branch(r16b)],
+        r16: [r16a, r16b].filter(Boolean) as Match[]
+      };
+    }
+
+    const branch1 = orderQfBranch(qf1);
+    const branch2 = orderQfBranch(qf2);
+    return {
+      r32: [...branch1.r32, ...branch2.r32],
+      r16: [...branch1.r16, ...branch2.r16],
+      qf: [qf1, qf2].filter(Boolean) as Match[],
+      sf: [semiMatch]
+    };
+  }
+
+  const left = orderSide(leftSemi);
+  const right = orderSide(rightSemi);
+
+  function toEntry(match: Match, allEntries: BracketEntry[]): BracketEntry {
+    const homeNo = parseFeederMatchNo(match.home_placeholder);
+    const awayNo = parseFeederMatchNo(match.away_placeholder);
+    const homeFeeder = homeNo ? allEntries.find((e) => e.match.fifa_match_no === homeNo) : undefined;
+    const awayFeeder = awayNo ? allEntries.find((e) => e.match.fifa_match_no === awayNo) : undefined;
+    return {
+      match,
+      homeLabel: homeFeeder ? selectedWinnerLabel(homeFeeder, draft) : match.home_label,
+      awayLabel: awayFeeder ? selectedWinnerLabel(awayFeeder, draft) : match.away_label
+    };
+  }
+
+  const allR32 = [...left.r32, ...right.r32];
+  const round32: BracketEntry[] = allR32.map((m) => ({ match: m, homeLabel: m.home_label, awayLabel: m.away_label }));
+
+  const allR16 = [...left.r16, ...right.r16];
+  const round16: BracketEntry[] = allR16.map((m) => toEntry(m, round32));
+
+  const allQF = [...left.qf, ...right.qf];
+  const quarters: BracketEntry[] = allQF.map((m) => toEntry(m, round16));
+
+  const allSF = [...left.sf, ...right.sf];
+  const semis: BracketEntry[] = allSF.map((m) => toEntry(m, quarters));
+
+  const final: BracketEntry[] = [toEntry(finalMatch, semis)];
+
+  const thirdPlaceMatch = knockout.find((m) => m.stage === 'THIRD_PLACE');
+  const thirdPlace: BracketEntry[] = thirdPlaceMatch ? [{
+    match: thirdPlaceMatch,
+    homeLabel: semis[0] ? selectedLoserLabel(semis[0], draft) : thirdPlaceMatch.home_label,
+    awayLabel: semis[1] ? selectedLoserLabel(semis[1], draft) : thirdPlaceMatch.away_label
+  }] : [];
+
+  return { round32, round16, quarters, semis, final, thirdPlace };
+}
+
+function flattenBracketRounds(rounds: ReturnType<typeof buildBracketRounds>) {
+  return [
+    ...rounds.round32,
+    ...rounds.round16,
+    ...rounds.quarters,
+    ...rounds.semis,
+    ...rounds.final,
+    ...rounds.thirdPlace
+  ];
+}
+
+function selectedWinnerLabel(entry: BracketEntry, draft: Record<string, BracketDraft>) {
+  const selected = draft[entry.match.id]?.outcome;
+  if (selected === 'HOME_WIN') return entry.homeLabel;
+  if (selected === 'AWAY_WIN') return entry.awayLabel;
+  return `Winner #${entry.match.fifa_match_no}`;
+}
+
+function selectedLoserLabel(entry: BracketEntry, draft: Record<string, BracketDraft>) {
+  const selected = draft[entry.match.id]?.outcome;
+  if (selected === 'HOME_WIN') return entry.awayLabel;
+  if (selected === 'AWAY_WIN') return entry.homeLabel;
+  return `Loser #${entry.match.fifa_match_no}`;
 }
 
 createRoot(document.getElementById('root')!).render(

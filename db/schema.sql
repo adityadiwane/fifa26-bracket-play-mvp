@@ -1,5 +1,6 @@
 -- FIFA26 Bracket Play - Cloudflare D1 schema
--- Prediction model: users pick outcome only: HOME_WIN, DRAW, AWAY_WIN.
+-- Prediction model: users pick outcome only (HOME_WIN, DRAW, AWAY_WIN).
+-- Bracket predictions are stored separately with optional double tokens.
 
 PRAGMA foreign_keys = ON;
 
@@ -57,6 +58,22 @@ CREATE TABLE IF NOT EXISTS predictions (
   CHECK (predicted_outcome IN ('HOME_WIN', 'DRAW', 'AWAY_WIN'))
 );
 
+CREATE TABLE IF NOT EXISTS bracket_predictions (
+  id TEXT PRIMARY KEY,
+  league_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  match_id TEXT NOT NULL,
+  predicted_outcome TEXT NOT NULL, -- HOME_WIN or AWAY_WIN only
+  is_doubled INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+  UNIQUE (league_id, user_id, match_id),
+  CHECK (predicted_outcome IN ('HOME_WIN', 'AWAY_WIN'))
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   league_id TEXT NOT NULL,
@@ -86,4 +103,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_league_display_name_normalized
 CREATE INDEX IF NOT EXISTS idx_matches_kickoff ON matches(kickoff_at);
 CREATE INDEX IF NOT EXISTS idx_predictions_user ON predictions(league_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_predictions_match ON predictions(league_id, match_id);
+CREATE INDEX IF NOT EXISTS idx_bracket_predictions_user ON bracket_predictions(league_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_bracket_predictions_match ON bracket_predictions(league_id, match_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_expiry ON sessions(expires_at);

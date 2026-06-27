@@ -2,11 +2,12 @@
 
 A lowest-cost hosted MVP for a friends-only FIFA26 World Cup prediction pool.
 
-Users do **not** predict scores. They select the match outcome only:
+Users select match outcomes, with optional score predictions for exact-score bonuses:
 
 - Group stage: home win, draw, away win
 - Knockout stage: home team advances or away team advances
-- Scoring: 2 points for a correct winner pick, 2.5 points for a correct draw pick, 0 points for wrong picks
+- Knockout bracket tab: Round of 32 through Final picks are saved together in a bracket flow
+- Scoring: 2 points for a correct winner pick, 2.5 points for a correct group-stage draw pick, 1 bonus point for a correct score, 0 points for wrong picks
 
 This implements the simplified version of the Cloudflare Pages + Worker + D1 approach from the design document.
 
@@ -34,6 +35,7 @@ scripts/           Python scoring, seeding, backup utilities
 - Login with invite code, display name, and PIN
 - Show all matches
 - Save one outcome pick per match
+- Save full knockout bracket predictions with optional scores
 - Lock predictions after kickoff
 - Group-stage draw support
 - Knockout draw disabled
@@ -205,8 +207,10 @@ Save prediction:
 
 ```json
 {
-  "matchId": "match_001",
-  "predictedOutcome": "HOME_WIN"
+  "matchId": "match_073",
+  "predictedOutcome": "HOME_WIN",
+  "predictedHomeScore": 2,
+  "predictedAwayScore": 1
 }
 ```
 
@@ -214,7 +218,9 @@ Update result:
 
 ```json
 {
-  "actualOutcome": "DRAW"
+  "actualOutcome": "HOME_WIN",
+  "actualHomeScore": 2,
+  "actualAwayScore": 1
 }
 ```
 

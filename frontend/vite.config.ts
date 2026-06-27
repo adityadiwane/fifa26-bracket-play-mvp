@@ -4,7 +4,10 @@ import react from '@vitejs/plugin-react';
 import { cloudflare } from "@cloudflare/vite-plugin";
 
 export default defineConfig({
-  plugins: [react(), cloudflare()],
+  plugins: [
+    react(),
+    ...(process.env.VITE_DISABLE_CLOUDFLARE_PLUGIN === '1' ? [] : [cloudflare()])
+  ],
   server: {
     port: 5173,
     proxy: {

@@ -1,4 +1,4 @@
-import type { LatestMatch, LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
+import type { BracketLeaderboardRow, BracketPrediction, LatestMatch, LeaderboardRow, Match, Outcome, Prediction, SessionState } from './types';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -101,6 +101,24 @@ export async function savePrediction(matchId: string, predictedOutcome: Outcome,
 
 export async function getLeaderboard(leagueId: string, token: string) {
   return request<{ leaderboard: LeaderboardRow[]; latestMatches: LatestMatch[] }>(`/api/league/${leagueId}/leaderboard`, {}, token);
+}
+
+export async function getMyBracket(leagueId: string, token: string) {
+  return request<{ predictions: BracketPrediction[]; doublesUsed: number; maxDoubles: number }>(`/api/league/${leagueId}/bracket/me`, {}, token);
+}
+
+export async function saveBracketPredictions(
+  predictions: Array<{ matchId: string; predictedOutcome: Outcome; isDoubled: boolean }>,
+  token: string
+) {
+  return request<{ saved: boolean; count: number }>('/api/bracket/save', {
+    method: 'POST',
+    body: JSON.stringify({ predictions })
+  }, token);
+}
+
+export async function getBracketLeaderboard(leagueId: string, token: string) {
+  return request<{ leaderboard: BracketLeaderboardRow[] }>(`/api/league/${leagueId}/leaderboard/bracket`, {}, token);
 }
 
 export async function updateResult(matchId: string, actualOutcome: Outcome, adminToken: string) {

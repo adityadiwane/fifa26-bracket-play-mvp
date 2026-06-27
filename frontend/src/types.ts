@@ -37,6 +37,15 @@ export type Prediction = {
   updated_at?: string;
 };
 
+export type BracketPrediction = {
+  match_id: string;
+  predicted_outcome: Outcome;
+  is_doubled: number;
+  points_awarded: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
 export type LeaderboardRow = {
   rank: number;
   previous_rank: number;
@@ -49,6 +58,18 @@ export type LeaderboardRow = {
   wrong_picks: number;
   completed_picks: number;
   latest_picks?: Record<string, Outcome | null>;
+};
+
+export type BracketLeaderboardRow = {
+  rank: number;
+  user_id: string;
+  display_name: string;
+  total_points: number;
+  correct_picks: number;
+  wrong_picks: number;
+  total_picks: number;
+  doubles_used: number;
+  champion_pick: string | null;
 };
 
 export type LatestMatch = {
