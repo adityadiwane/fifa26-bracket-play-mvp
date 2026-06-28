@@ -301,7 +301,7 @@ function BracketPage({ session }: { session: SessionState }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [lockStatus, setLockStatus] = useState<'open' | 'phase1' | 'locked'>('open');
+  const [lockStatus, setLockStatus] = useState<'open' | 'locked'>('open');
 
   useEffect(() => {
     async function load() {
@@ -330,9 +330,7 @@ function BracketPage({ session }: { session: SessionState }) {
         if (r32Matches.length >= 2) {
           const now = Date.now();
           const secondKickoff = new Date(r32Matches[1].kickoff_at).getTime();
-          const firstKickoff = new Date(r32Matches[0].kickoff_at).getTime();
           if (now >= secondKickoff) setLockStatus('locked');
-          else if (now >= firstKickoff) setLockStatus('phase1');
           else setLockStatus('open');
         }
       } catch (err) {
@@ -351,8 +349,6 @@ function BracketPage({ session }: { session: SessionState }) {
     matches.filter((m) => m.stage === 'ROUND_OF_32').sort((a, b) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime()),
     [matches]
   );
-  const firstR32Id = r32Matches[0]?.id ?? null;
-
 
   const completedPicks = knockoutEntries.filter(({ match }) => draft[match.id]?.outcome).length;
   const doublesUsed = Object.values(draft).filter((d) => d.isDoubled).length;
@@ -394,19 +390,15 @@ function BracketPage({ session }: { session: SessionState }) {
 
 
 
-  const [countdowns, setCountdowns] = useState<{ first: string; all: string }>({ first: '', all: '' });
+  const [countdown, setCountdown] = useState('');
 
   useEffect(() => {
     if (r32Matches.length < 2) return;
-    const firstKO = new Date(r32Matches[0].kickoff_at).getTime();
-    const secondKO = new Date(r32Matches[1].kickoff_at).getTime();
+    const lockTime = new Date(r32Matches[1].kickoff_at).getTime();
 
     function tick() {
       const now = Date.now();
-      setCountdowns({
-        first: now >= firstKO ? 'LOCKED' : formatCountdown(firstKO - now),
-        all: now >= secondKO ? 'LOCKED' : formatCountdown(secondKO - now),
-      });
+      setCountdown(now >= lockTime ? 'LOCKED' : formatCountdown(lockTime - now));
     }
     tick();
     const id = setInterval(tick, 1000);
@@ -425,22 +417,15 @@ function BracketPage({ session }: { session: SessionState }) {
     );
   }
 
-  const firstLabel = r32Matches[0] ? `${r32Matches[0].home_label} vs ${r32Matches[0].away_label}` : '';
   const secondLabel = r32Matches[1] ? `${r32Matches[1].home_label} vs ${r32Matches[1].away_label}` : '';
 
   const lockBannerLines = lockStatus === 'locked'
     ? ['Bracket is fully locked. No changes allowed.']
-    : lockStatus === 'phase1'
+    : r32Matches.length >= 2
       ? [
-          `${firstLabel} is locked (kickoff passed).`,
-          `All remaining picks lock when ${secondLabel} kicks off.`
+          `All bracket picks are open and can be changed until ${secondLabel} kicks off (${formatDate(r32Matches[1].kickoff_at)}).`
         ]
-      : r32Matches.length >= 2
-        ? [
-            `First pick (${firstLabel}) must be locked in before kickoff.`,
-            `All other bracket picks can be changed until ${secondLabel} kicks off.`
-          ]
-        : ['Bracket open'];
+      : ['Bracket open'];
 
   return (
     <section className="bracket-section">
@@ -460,12 +445,8 @@ function BracketPage({ session }: { session: SessionState }) {
         {lockStatus !== 'locked' && r32Matches.length >= 2 && (
           <div className="countdown-row">
             <span className="countdown-item">
-              <span className="countdown-label">First pick locks in:</span>
-              <span className="countdown-value">{countdowns.first}</span>
-            </span>
-            <span className="countdown-item">
               <span className="countdown-label">All picks lock in:</span>
-              <span className="countdown-value">{countdowns.all}</span>
+              <span className="countdown-value">{countdown}</span>
             </span>
           </div>
         )}
@@ -509,7 +490,6 @@ function BracketPage({ session }: { session: SessionState }) {
             ]}
             draft={draft}
             lockStatus={lockStatus}
-            firstR32Id={firstR32Id}
             doublesUsed={doublesUsed}
             onChange={updateDraft}
             onToggleDouble={toggleDouble}
@@ -556,7 +536,6 @@ function BracketPage({ session }: { session: SessionState }) {
             ]}
             draft={draft}
             lockStatus={lockStatus}
-            firstR32Id={firstR32Id}
             doublesUsed={doublesUsed}
             onChange={updateDraft}
             onToggleDouble={toggleDouble}
@@ -567,12 +546,11 @@ function BracketPage({ session }: { session: SessionState }) {
   );
 }
 
-function BracketSide({ side, entries, draft, lockStatus, firstR32Id, doublesUsed, onChange, onToggleDouble }: {
+function BracketSide({ side, entries, draft, lockStatus, doublesUsed, onChange, onToggleDouble }: {
   side: 'left' | 'right';
   entries: BracketEntry[][];
   draft: Record<string, BracketDraft>;
-  lockStatus: 'open' | 'phase1' | 'locked';
-  firstR32Id: string | null;
+  lockStatus: 'open' | 'locked';
   doublesUsed: number;
   onChange: (matchId: string, update: Partial<BracketDraft>) => void;
   onToggleDouble: (matchId: string) => void;
@@ -588,7 +566,7 @@ function BracketSide({ side, entries, draft, lockStatus, firstR32Id, doublesUsed
           <p className="round-label">{labels[index]}</p>
           <div className="round-stack">
             {roundEntries.map((entry) => {
-              const isLocked = lockStatus === 'locked' || (lockStatus === 'phase1' && entry.match.id === firstR32Id);
+              const isLocked = lockStatus === 'locked';
               return (
                 <BracketMatchCard
                   key={entry.match.id}

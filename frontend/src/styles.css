@@ -145,7 +145,6 @@ input, select {
 .lock-banner p { margin: 0 0 4px; }
 .lock-banner p:last-child { margin-bottom: 0; }
 .lock-banner.open { background: #fff7e6; color: #8a6414; }
-.lock-banner.phase1 { background: #fff7e6; color: #8a6414; }
 .lock-banner.locked { background: #f3edf8; color: #6a3d87; }
 .bracket-instructions {
   background: #fff7e6;
