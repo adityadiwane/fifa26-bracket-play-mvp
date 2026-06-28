@@ -144,9 +144,72 @@ input, select {
 }
 .lock-banner p { margin: 0 0 4px; }
 .lock-banner p:last-child { margin-bottom: 0; }
-.lock-banner.open { background: #e7f8ec; color: #176b38; }
+.lock-banner.open { background: #fff7e6; color: #8a6414; }
 .lock-banner.phase1 { background: #fff7e6; color: #8a6414; }
 .lock-banner.locked { background: #f3edf8; color: #6a3d87; }
+.bracket-instructions {
+  background: #fff7e6;
+  border: 1px solid #f0d78a;
+  border-radius: 12px;
+  padding: 0;
+}
+.bracket-instructions summary {
+  padding: 12px 16px;
+  font-weight: 700;
+  font-size: 0.92rem;
+  cursor: pointer;
+  color: #8a6414;
+}
+.bracket-instructions[open] summary { border-bottom: 1px solid #f0d78a; }
+.bracket-instructions-body {
+  padding: 14px 16px;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #3a4a5c;
+}
+.bracket-instructions-body h4 {
+  margin: 14px 0 6px;
+  font-size: 0.88rem;
+  color: #2d3a4a;
+}
+.bracket-instructions-body h4:first-child { margin-top: 0; }
+.bracket-instructions-body ul { margin: 0; padding-left: 18px; }
+.bracket-instructions-body li { margin-bottom: 4px; }
+.bracket-instructions-body p { margin: 0 0 8px; }
+.scoring-table {
+  width: 100%;
+  max-width: 280px;
+  border-collapse: collapse;
+  margin: 6px 0 12px;
+  font-size: 0.86rem;
+}
+.scoring-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid #e4e9f0;
+}
+.scoring-table td:last-child { font-weight: 700; text-align: right; }
+.scoring-table tr:last-child td { border-bottom: none; }
+.countdown-row {
+  display: flex;
+  gap: 20px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.countdown-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.countdown-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.countdown-value {
+  font-size: 0.88rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
 .bracket-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
