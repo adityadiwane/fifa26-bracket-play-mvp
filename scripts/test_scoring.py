@@ -29,10 +29,40 @@ class MatchScoringTests(unittest.TestCase):
 
 
 class BracketScoringTests(unittest.TestCase):
-    def test_correct_bracket_pick_gets_two_points(self):
+    def test_correct_r32_pick_gets_two_points(self):
         self.assertEqual(
             calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "ROUND_OF_32"),
             2,
+        )
+
+    def test_correct_r16_pick_gets_four_points(self):
+        self.assertEqual(
+            calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "ROUND_OF_16"),
+            4,
+        )
+
+    def test_correct_qf_pick_gets_six_points(self):
+        self.assertEqual(
+            calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "QUARTER_FINAL"),
+            6,
+        )
+
+    def test_correct_sf_pick_gets_eight_points(self):
+        self.assertEqual(
+            calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "SEMI_FINAL"),
+            8,
+        )
+
+    def test_correct_third_place_pick_gets_eight_points(self):
+        self.assertEqual(
+            calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "THIRD_PLACE"),
+            8,
+        )
+
+    def test_correct_final_pick_gets_ten_points(self):
+        self.assertEqual(
+            calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "FINAL"),
+            10,
         )
 
     def test_wrong_bracket_pick_gets_zero_points(self):
@@ -41,22 +71,16 @@ class BracketScoringTests(unittest.TestCase):
             0,
         )
 
-    def test_correct_final_pick_gets_champion_bonus(self):
-        self.assertEqual(
-            calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "FINAL"),
-            6,
-        )
-
-    def test_correct_pick_doubled_gives_four_points(self):
+    def test_correct_r16_doubled_gives_eight_points(self):
         self.assertEqual(
             calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "ROUND_OF_16", is_doubled=True),
-            4,
+            8,
         )
 
-    def test_correct_final_doubled_gives_sixteen_points(self):
+    def test_correct_final_doubled_gives_twenty_points(self):
         self.assertEqual(
             calculate_bracket_points(Outcome.HOME_WIN, Outcome.HOME_WIN, "FINAL", is_doubled=True),
-            12,
+            20,
         )
 
     def test_wrong_pick_doubled_gives_zero_points(self):

@@ -25,7 +25,7 @@ const LOGIN_PIN_PLACEHOLDER = 'Enter your PIN';
 const PLACEHOLDER_BASE_FONT_SIZE = 16;
 const PLACEHOLDER_MIN_FONT_SIZE = 8;
 const KNOCKOUT_STAGES = ['ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'THIRD_PLACE', 'FINAL'];
-const MAX_DOUBLES = 5;
+const MAX_DOUBLES = 8;
 
 type AppTab = 'predictions' | 'bracket' | 'leaderboard' | 'admin';
 type BracketDraft = {
@@ -394,6 +394,25 @@ function BracketPage({ session }: { session: SessionState }) {
 
 
 
+  const [countdowns, setCountdowns] = useState<{ first: string; all: string }>({ first: '', all: '' });
+
+  useEffect(() => {
+    if (r32Matches.length < 2) return;
+    const firstKO = new Date(r32Matches[0].kickoff_at).getTime();
+    const secondKO = new Date(r32Matches[1].kickoff_at).getTime();
+
+    function tick() {
+      const now = Date.now();
+      setCountdowns({
+        first: now >= firstKO ? 'LOCKED' : formatCountdown(firstKO - now),
+        all: now >= secondKO ? 'LOCKED' : formatCountdown(secondKO - now),
+      });
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [r32Matches]);
+
   if (loading) return <Loading />;
 
   if (knockoutEntries.length === 0) {
@@ -406,17 +425,20 @@ function BracketPage({ session }: { session: SessionState }) {
     );
   }
 
+  const firstLabel = r32Matches[0] ? `${r32Matches[0].home_label} vs ${r32Matches[0].away_label}` : '';
+  const secondLabel = r32Matches[1] ? `${r32Matches[1].home_label} vs ${r32Matches[1].away_label}` : '';
+
   const lockBannerLines = lockStatus === 'locked'
     ? ['Bracket is fully locked. No changes allowed.']
     : lockStatus === 'phase1'
       ? [
-          `Match #${r32Matches[0]?.fifa_match_no} is locked (kickoff passed).`,
-          `All remaining picks lock when Match #${r32Matches[1]?.fifa_match_no} kicks off (${formatDate(r32Matches[1]?.kickoff_at)}).`
+          `${firstLabel} is locked (kickoff passed).`,
+          `All remaining picks lock when ${secondLabel} kicks off.`
         ]
       : r32Matches.length >= 2
         ? [
-            `First R32 pick (Match #${r32Matches[0]?.fifa_match_no}) must be locked in before ${formatDate(r32Matches[0].kickoff_at)}.`,
-            `All other bracket picks can be changed until Match #${r32Matches[1]?.fifa_match_no} kicks off (${formatDate(r32Matches[1].kickoff_at)}).`
+            `First pick (${firstLabel}) must be locked in before kickoff.`,
+            `All other bracket picks can be changed until ${secondLabel} kicks off.`
           ]
         : ['Bracket open'];
 
@@ -429,13 +451,49 @@ function BracketPage({ session }: { session: SessionState }) {
         </div>
         <div className="bracket-actions">
           <span>{completedPicks}/{knockoutEntries.length} picked</span>
-          <span className="double-counter">{doublesUsed}/{MAX_DOUBLES} doubles</span>
+          <span className="double-counter">{doublesUsed}/{MAX_DOUBLES} double points</span>
         </div>
       </div>
 
       <div className={`lock-banner ${lockStatus}`}>
         {lockBannerLines.map((line, i) => <p key={i}>{line}</p>)}
+        {lockStatus !== 'locked' && r32Matches.length >= 2 && (
+          <div className="countdown-row">
+            <span className="countdown-item">
+              <span className="countdown-label">First pick locks in:</span>
+              <span className="countdown-value">{countdowns.first}</span>
+            </span>
+            <span className="countdown-item">
+              <span className="countdown-label">All picks lock in:</span>
+              <span className="countdown-value">{countdowns.all}</span>
+            </span>
+          </div>
+        )}
       </div>
+
+      <details className="bracket-instructions">
+        <summary>How to play</summary>
+        <div className="bracket-instructions-body">
+          <p><strong>All picks must be submitted together as a complete bracket</strong> — predict the winner of every knockout match from the Round of 32 through to the Final.</p>
+
+          <h4>Scoring</h4>
+          <p>Points increase as the tournament progresses:</p>
+          <table className="scoring-table">
+            <tbody>
+              <tr><td>Round of 32</td><td>2 pts</td></tr>
+              <tr><td>Round of 16</td><td>4 pts</td></tr>
+              <tr><td>Quarter-Finals</td><td>6 pts</td></tr>
+              <tr><td>Semi-Finals</td><td>8 pts</td></tr>
+              <tr><td>3rd Place Match</td><td>8 pts</td></tr>
+              <tr><td>Final</td><td>10 pts</td></tr>
+            </tbody>
+          </table>
+
+          <h4>Double Points (x2)</h4>
+          <p>You have <strong>8 double tokens</strong> to use across your entire bracket. Apply a double to any match you feel confident about — if your pick is correct, the points for that match are doubled. If your pick is wrong, the token is wasted and you score zero. Choose wisely!</p>
+        </div>
+      </details>
+
       {message && <div className="success">{message}</div>}
       {error && <div className="error">{error}</div>}
 
@@ -994,6 +1052,18 @@ function formatDate(value: string) {
     minute: '2-digit',
     timeZoneName: 'short'
   }).format(new Date(value));
+}
+
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return 'LOCKED';
+  const totalSec = Math.floor(ms / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  return `${minutes}m ${seconds}s`;
 }
 
 function getLocalDateKey(value: string) {

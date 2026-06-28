@@ -15,7 +15,7 @@ type Session = {
 
 const OUTCOMES: Outcome[] = ['HOME_WIN', 'DRAW', 'AWAY_WIN'];
 const BRACKET_OUTCOMES: Outcome[] = ['HOME_WIN', 'AWAY_WIN'];
-const MAX_DOUBLE_TOKENS = 5;
+const MAX_DOUBLE_TOKENS = 8;
 const SESSION_DAYS = 14;
 
 export default {
@@ -395,10 +395,16 @@ async function listMyBracket(request: Request, env: Env, leagueId: string): Prom
   const { results } = await env.DB.prepare(
     `SELECT bp.match_id, bp.predicted_outcome, bp.is_doubled, bp.created_at, bp.updated_at,
             CASE
-              WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome AND m.stage = 'FINAL'
-                THEN CASE WHEN bp.is_doubled = 1 THEN (2 + 4) * 2 ELSE 2 + 4 END
               WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome
-                THEN CASE WHEN bp.is_doubled = 1 THEN 4 ELSE 2 END
+                THEN (CASE m.stage
+                  WHEN 'ROUND_OF_32' THEN 2
+                  WHEN 'ROUND_OF_16' THEN 4
+                  WHEN 'QUARTER_FINAL' THEN 6
+                  WHEN 'SEMI_FINAL' THEN 8
+                  WHEN 'THIRD_PLACE' THEN 8
+                  WHEN 'FINAL' THEN 10
+                  ELSE 2
+                END) * (CASE WHEN bp.is_doubled = 1 THEN 2 ELSE 1 END)
               ELSE 0
             END AS points_awarded
        FROM bracket_predictions bp
@@ -537,10 +543,16 @@ async function getBracketLeaderboard(request: Request, env: Env, leagueId: strin
     `SELECT u.id AS user_id,
             u.display_name,
             COALESCE(SUM(CASE
-              WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome AND m.stage = 'FINAL'
-                THEN CASE WHEN bp.is_doubled = 1 THEN (2 + 4) * 2 ELSE 2 + 4 END
               WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome
-                THEN CASE WHEN bp.is_doubled = 1 THEN 4 ELSE 2 END
+                THEN (CASE m.stage
+                  WHEN 'ROUND_OF_32' THEN 2
+                  WHEN 'ROUND_OF_16' THEN 4
+                  WHEN 'QUARTER_FINAL' THEN 6
+                  WHEN 'SEMI_FINAL' THEN 8
+                  WHEN 'THIRD_PLACE' THEN 8
+                  WHEN 'FINAL' THEN 10
+                  ELSE 2
+                END) * (CASE WHEN bp.is_doubled = 1 THEN 2 ELSE 1 END)
               ELSE 0
             END), 0) AS total_points,
             COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,

@@ -18,9 +18,16 @@ class Outcome(StrEnum):
 
 CORRECT_WINNER_POINTS = 2
 CORRECT_DRAW_POINTS = 2.5
-BRACKET_CORRECT_POINTS = 2
-BRACKET_CHAMPION_BONUS = 4
-MAX_DOUBLE_TOKENS = 5
+MAX_DOUBLE_TOKENS = 8
+
+BRACKET_STAGE_POINTS: dict[str, int] = {
+    "ROUND_OF_32": 2,
+    "ROUND_OF_16": 4,
+    "QUARTER_FINAL": 6,
+    "SEMI_FINAL": 8,
+    "THIRD_PLACE": 8,
+    "FINAL": 10,
+}
 
 
 @dataclass(frozen=True)
@@ -67,11 +74,9 @@ def calculate_bracket_points(
 ) -> float:
     """Return points for a bracket prediction.
 
-    Rules:
-      - Correct pick: 2 pts
-      - Correct Final pick: 2 + 4 = 6 pts (champion bonus)
-      - If doubled and correct: points * 2
-      - If wrong: 0 pts (double token wasted)
+    Points scale by round: R32=2, R16=4, QF=6, SF/3rd=8, Final=10.
+    If doubled and correct: points * 2.
+    If wrong: 0 pts (double token wasted).
     """
     if not predicted_outcome or not actual_outcome:
         return 0
@@ -85,9 +90,7 @@ def calculate_bracket_points(
     if predicted != actual:
         return 0
 
-    base = BRACKET_CORRECT_POINTS
-    if stage.upper() == "FINAL":
-        base += BRACKET_CHAMPION_BONUS
+    base = BRACKET_STAGE_POINTS.get(stage.upper(), 2)
 
     if is_doubled:
         base *= 2
