@@ -93,6 +93,10 @@ export default {
         return await updateMatchResult(request, env, adminResult[1]);
       }
 
+      if (request.method === 'POST' && path === '/api/admin/backfill-bracket-winners') {
+        return await backfillBracketWinners(request, env);
+      }
+
       if (request.method === 'POST' && path === '/api/admin/recalculate') {
         const session = await requireSession(request, env, { admin: true });
         return ok({ message: 'Leaderboard is calculated dynamically; no recalculation required.', leagueId: session.league_id }, env);
@@ -393,9 +397,15 @@ async function listMyBracket(request: Request, env: Env, leagueId: string): Prom
   if (!session.user_id) throw new AppError('User session required.', 401);
 
   const { results } = await env.DB.prepare(
-    `SELECT bp.match_id, bp.predicted_outcome, bp.is_doubled, bp.created_at, bp.updated_at,
+    `SELECT bp.match_id, bp.predicted_outcome, bp.is_doubled, bp.predicted_winner_team,
+            bp.created_at, bp.updated_at,
             CASE
-              WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome
+              WHEN m.status = 'COMPLETED'
+               AND bp.predicted_winner_team IS NOT NULL
+               AND bp.predicted_winner_team = CASE m.actual_outcome
+                 WHEN 'HOME_WIN' THEN m.home_team
+                 WHEN 'AWAY_WIN' THEN m.away_team
+               END
                 THEN (CASE m.stage
                   WHEN 'ROUND_OF_32' THEN 2
                   WHEN 'ROUND_OF_16' THEN 4
@@ -432,7 +442,7 @@ async function saveBracket(request: Request, env: Env): Promise<Response> {
   const incomingMatchIds = predictions.map((p) => p.matchId);
 
   const { results: existingRows } = await env.DB.prepare(
-    `SELECT match_id, is_doubled FROM bracket_predictions WHERE league_id = ? AND user_id = ?`
+    `SELECT match_id, is_doubled, predicted_outcome FROM bracket_predictions WHERE league_id = ? AND user_id = ?`
   ).bind(session.league_id, session.user_id).all();
 
   const existingDoublesOutsideRequest = (existingRows ?? [])
@@ -445,6 +455,16 @@ async function saveBracket(request: Request, env: Env): Promise<Response> {
 
   // Get bracket locking state
   const lockState = await getBracketLockState(env);
+
+  // Build merged prediction map for bracket chain resolution
+  const { matchMap, matchNoToId } = await loadBracketMaps(env);
+  const predMap = new Map<string, string>();
+  for (const row of existingRows ?? []) {
+    predMap.set(row.match_id as string, row.predicted_outcome as string);
+  }
+  for (const pred of predictions) {
+    predMap.set(pred.matchId, pred.predictedOutcome);
+  }
 
   const statements: D1PreparedStatement[] = [];
 
@@ -466,6 +486,8 @@ async function saveBracket(request: Request, env: Env): Promise<Response> {
       throw new AppError(`Match #${lockState.firstMatchNo} is locked (kickoff has passed). All other picks remain editable.`, 409);
     }
 
+    const winnerTeam = resolveUserPredictedWinner(matchId, predMap, matchMap, matchNoToId);
+
     const existing = await env.DB.prepare(
       `SELECT id FROM bracket_predictions WHERE league_id = ? AND user_id = ? AND match_id = ?`
     ).bind(session.league_id, session.user_id, matchId).first<{ id: string }>();
@@ -473,15 +495,15 @@ async function saveBracket(request: Request, env: Env): Promise<Response> {
     if (existing) {
       statements.push(
         env.DB.prepare(
-          `UPDATE bracket_predictions SET predicted_outcome = ?, is_doubled = ?, updated_at = datetime('now') WHERE id = ?`
-        ).bind(predictedOutcome, isDoubled, existing.id)
+          `UPDATE bracket_predictions SET predicted_outcome = ?, is_doubled = ?, predicted_winner_team = ?, updated_at = datetime('now') WHERE id = ?`
+        ).bind(predictedOutcome, isDoubled, winnerTeam, existing.id)
       );
     } else {
       statements.push(
         env.DB.prepare(
-          `INSERT INTO bracket_predictions (id, league_id, user_id, match_id, predicted_outcome, is_doubled)
-           VALUES (?, ?, ?, ?, ?, ?)`
-        ).bind(makeId('bpred'), session.league_id, session.user_id, matchId, predictedOutcome, isDoubled)
+          `INSERT INTO bracket_predictions (id, league_id, user_id, match_id, predicted_outcome, is_doubled, predicted_winner_team)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).bind(makeId('bpred'), session.league_id, session.user_id, matchId, predictedOutcome, isDoubled, winnerTeam)
       );
     }
   }
@@ -543,7 +565,12 @@ async function getBracketLeaderboard(request: Request, env: Env, leagueId: strin
     `SELECT u.id AS user_id,
             u.display_name,
             COALESCE(SUM(CASE
-              WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome
+              WHEN m.status = 'COMPLETED'
+               AND bp.predicted_winner_team IS NOT NULL
+               AND bp.predicted_winner_team = CASE m.actual_outcome
+                 WHEN 'HOME_WIN' THEN m.home_team
+                 WHEN 'AWAY_WIN' THEN m.away_team
+               END
                 THEN (CASE m.stage
                   WHEN 'ROUND_OF_32' THEN 2
                   WHEN 'ROUND_OF_16' THEN 4
@@ -555,8 +582,18 @@ async function getBracketLeaderboard(request: Request, env: Env, leagueId: strin
                 END) * (CASE WHEN bp.is_doubled = 1 THEN 2 ELSE 1 END)
               ELSE 0
             END), 0) AS total_points,
-            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND bp.predicted_outcome = m.actual_outcome THEN 1 ELSE 0 END), 0) AS correct_picks,
-            COALESCE(SUM(CASE WHEN m.status = 'COMPLETED' AND bp.id IS NOT NULL AND bp.predicted_outcome != m.actual_outcome THEN 1 ELSE 0 END), 0) AS wrong_picks,
+            COALESCE(SUM(CASE
+              WHEN m.status = 'COMPLETED'
+               AND bp.predicted_winner_team IS NOT NULL
+               AND bp.predicted_winner_team = CASE m.actual_outcome
+                 WHEN 'HOME_WIN' THEN m.home_team WHEN 'AWAY_WIN' THEN m.away_team END
+              THEN 1 ELSE 0 END), 0) AS correct_picks,
+            COALESCE(SUM(CASE
+              WHEN m.status = 'COMPLETED' AND bp.id IS NOT NULL
+               AND (bp.predicted_winner_team IS NULL
+                OR bp.predicted_winner_team != CASE m.actual_outcome
+                  WHEN 'HOME_WIN' THEN m.home_team WHEN 'AWAY_WIN' THEN m.away_team END)
+              THEN 1 ELSE 0 END), 0) AS wrong_picks,
             COALESCE(SUM(CASE WHEN bp.id IS NOT NULL THEN 1 ELSE 0 END), 0) AS total_picks,
             COALESCE(SUM(CASE WHEN bp.is_doubled = 1 THEN 1 ELSE 0 END), 0) AS doubles_used
        FROM users u
@@ -695,6 +732,124 @@ async function snapshotRanks(env: Env, leagueId: string): Promise<void> {
   });
 
   await env.DB.batch(updates);
+}
+
+// ─── Bracket Chain Resolution ────────────────────────────────────────────────
+
+function parseFeederInfo(placeholder: string | null): { matchNo: number; isWinner: boolean } | null {
+  if (!placeholder) return null;
+  const winner = placeholder.match(/^Winner Match (\d+)$/);
+  if (winner) return { matchNo: parseInt(winner[1], 10), isWinner: true };
+  const loser = placeholder.match(/^Loser Match (\d+)$/);
+  if (loser) return { matchNo: parseInt(loser[1], 10), isWinner: false };
+  return null;
+}
+
+type MatchInfo = {
+  id: string; fifa_match_no: number; stage: string;
+  home_team: string | null; away_team: string | null;
+  home_placeholder: string | null; away_placeholder: string | null;
+};
+
+function resolveExpectedTeams(
+  matchId: string,
+  userPreds: Map<string, string>,
+  matches: Map<string, MatchInfo>,
+  matchNoToId: Map<number, string>,
+): { home: string | null; away: string | null } {
+  const match = matches.get(matchId);
+  if (!match) return { home: null, away: null };
+
+  if (match.stage === 'ROUND_OF_32') {
+    return { home: match.home_team, away: match.away_team };
+  }
+
+  const resolveSlot = (placeholder: string | null): string | null => {
+    const info = parseFeederInfo(placeholder);
+    if (!info) return null;
+    const feederId = matchNoToId.get(info.matchNo);
+    if (!feederId) return null;
+    const feederPred = userPreds.get(feederId);
+    if (!feederPred) return null;
+    const feederTeams = resolveExpectedTeams(feederId, userPreds, matches, matchNoToId);
+    if (!feederTeams.home || !feederTeams.away) return null;
+    if (info.isWinner) {
+      return feederPred === 'HOME_WIN' ? feederTeams.home : feederTeams.away;
+    }
+    return feederPred === 'HOME_WIN' ? feederTeams.away : feederTeams.home;
+  };
+
+  return { home: resolveSlot(match.home_placeholder), away: resolveSlot(match.away_placeholder) };
+}
+
+function resolveUserPredictedWinner(
+  matchId: string,
+  userPreds: Map<string, string>,
+  matches: Map<string, MatchInfo>,
+  matchNoToId: Map<number, string>,
+): string | null {
+  const pred = userPreds.get(matchId);
+  if (!pred) return null;
+  const teams = resolveExpectedTeams(matchId, userPreds, matches, matchNoToId);
+  return pred === 'HOME_WIN' ? teams.home : teams.away;
+}
+
+async function loadBracketMaps(env: Env): Promise<{ matchMap: Map<string, MatchInfo>; matchNoToId: Map<number, string> }> {
+  const { results } = await env.DB.prepare(
+    `SELECT id, fifa_match_no, stage, home_team, away_team, home_placeholder, away_placeholder
+       FROM matches WHERE stage != 'GROUP'`
+  ).all();
+  const matchMap = new Map<string, MatchInfo>();
+  const matchNoToId = new Map<number, string>();
+  for (const m of results ?? []) {
+    const info: MatchInfo = {
+      id: m.id as string, fifa_match_no: m.fifa_match_no as number, stage: m.stage as string,
+      home_team: m.home_team as string | null, away_team: m.away_team as string | null,
+      home_placeholder: m.home_placeholder as string | null, away_placeholder: m.away_placeholder as string | null,
+    };
+    matchMap.set(info.id, info);
+    matchNoToId.set(info.fifa_match_no, info.id);
+  }
+  return { matchMap, matchNoToId };
+}
+
+async function backfillBracketWinners(request: Request, env: Env): Promise<Response> {
+  await requireSession(request, env, { admin: true });
+
+  const { matchMap, matchNoToId } = await loadBracketMaps(env);
+
+  const { results: allPreds } = await env.DB.prepare(
+    `SELECT id, user_id, match_id, predicted_outcome FROM bracket_predictions`
+  ).all();
+
+  const byUser = new Map<string, Map<string, string>>();
+  const predIdLookup = new Map<string, string>();
+  for (const p of allPreds ?? []) {
+    const uid = p.user_id as string;
+    const mid = p.match_id as string;
+    if (!byUser.has(uid)) byUser.set(uid, new Map());
+    byUser.get(uid)!.set(mid, p.predicted_outcome as string);
+    predIdLookup.set(`${uid}:${mid}`, p.id as string);
+  }
+
+  const updates: D1PreparedStatement[] = [];
+  for (const [userId, preds] of byUser) {
+    for (const [matchId] of preds) {
+      const winner = resolveUserPredictedWinner(matchId, preds, matchMap, matchNoToId);
+      if (winner) {
+        const predId = predIdLookup.get(`${userId}:${matchId}`)!;
+        updates.push(
+          env.DB.prepare(`UPDATE bracket_predictions SET predicted_winner_team = ? WHERE id = ?`).bind(winner, predId)
+        );
+      }
+    }
+  }
+
+  for (let i = 0; i < updates.length; i += 100) {
+    await env.DB.batch(updates.slice(i, i + 100));
+  }
+
+  return ok({ backfilled: true, totalUpdated: updates.length, totalPredictions: (allPreds ?? []).length }, env);
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS bracket_predictions (
   match_id TEXT NOT NULL,
   predicted_outcome TEXT NOT NULL, -- HOME_WIN or AWAY_WIN only
   is_doubled INTEGER NOT NULL DEFAULT 0,
+  predicted_winner_team TEXT, -- resolved team name from bracket chain, used for scoring
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (league_id) REFERENCES leagues(id) ON DELETE CASCADE,
