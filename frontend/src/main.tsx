@@ -31,6 +31,7 @@ type AppTab = 'predictions' | 'bracket' | 'leaderboard' | 'admin';
 type BracketDraft = {
   outcome?: Outcome;
   isDoubled: boolean;
+  pointsAwarded?: number;
 };
 
 function App() {
@@ -318,6 +319,7 @@ function BracketPage({ session }: { session: SessionState }) {
           nextDraft[bp.match_id] = {
             outcome: bp.predicted_outcome,
             isDoubled: bp.is_doubled === 1,
+            pointsAwarded: bp.points_awarded ?? 0,
           };
         }
         setDraft(nextDraft);
@@ -599,8 +601,8 @@ function BracketMatchCard({ entry, draft, locked, doublesUsed, onChange, onToggl
   const canDouble = isDoubled || doublesUsed < MAX_DOUBLES;
 
   const isCompleted = entry.match.status === 'COMPLETED';
-  const isCorrect = isCompleted && selected && selected === entry.match.actual_outcome;
-  const isWrong = isCompleted && selected && selected !== entry.match.actual_outcome;
+  const isCorrect = isCompleted && !!selected && (draft?.pointsAwarded ?? 0) > 0;
+  const isWrong = isCompleted && !!selected && !isCorrect;
 
   const resultClass = isCorrect ? 'result-correct' : isWrong ? 'result-wrong' : '';
 
