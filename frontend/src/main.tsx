@@ -9,6 +9,7 @@ import {
   getMatches,
   getMyBracket,
   getMyPredictions,
+  getUserBracket,
   joinLeague,
   loginUser,
   lookupLeague,
@@ -27,7 +28,7 @@ const PLACEHOLDER_MIN_FONT_SIZE = 8;
 const KNOCKOUT_STAGES = ['ROUND_OF_32', 'ROUND_OF_16', 'QUARTER_FINAL', 'SEMI_FINAL', 'THIRD_PLACE', 'FINAL'];
 const MAX_DOUBLES = 8;
 
-type AppTab = 'predictions' | 'bracket' | 'leaderboard' | 'admin';
+type AppTab = 'predictions' | 'bracket' | 'all-brackets' | 'leaderboard' | 'admin';
 type BracketDraft = {
   outcome?: Outcome;
   isDoubled: boolean;
@@ -63,11 +64,13 @@ function App() {
         <button className={tab === 'predictions' ? 'active' : ''} onClick={() => setTab('predictions')}>Predictions</button>
         <button className={tab === 'bracket' ? 'active' : ''} onClick={() => setTab('bracket')}>Bracket</button>
         <button className={tab === 'leaderboard' ? 'active' : ''} onClick={() => setTab('leaderboard')}>Leaderboard</button>
+        <button className={tab === 'all-brackets' ? 'active' : ''} onClick={() => setTab('all-brackets')}>All Brackets</button>
         <button className={tab === 'admin' ? 'active' : ''} onClick={() => setTab('admin')}>Admin</button>
       </nav>
 
       {tab === 'predictions' && <PredictionsPage session={session} />}
       {tab === 'bracket' && <BracketPage session={session} />}
+      {tab === 'all-brackets' && <AllBracketsPage session={session} />}
       {tab === 'leaderboard' && <LeaderboardPage session={session} />}
       {tab === 'admin' && <AdminPage session={session} onSession={persistSession} />}
     </div>
@@ -548,7 +551,7 @@ function BracketPage({ session }: { session: SessionState }) {
   );
 }
 
-function BracketSide({ side, entries, draft, lockStatus, doublesUsed, onChange, onToggleDouble }: {
+function BracketSide({ side, entries, draft, lockStatus, doublesUsed, onChange, onToggleDouble, readOnly }: {
   side: 'left' | 'right';
   entries: BracketEntry[][];
   draft: Record<string, BracketDraft>;
@@ -556,6 +559,7 @@ function BracketSide({ side, entries, draft, lockStatus, doublesUsed, onChange, 
   doublesUsed: number;
   onChange: (matchId: string, update: Partial<BracketDraft>) => void;
   onToggleDouble: (matchId: string) => void;
+  readOnly?: boolean;
 }) {
   const labels = side === 'left'
     ? ['Round of 32', 'Round of 16', 'Quarter Finals', 'Semi Finals']
@@ -578,6 +582,7 @@ function BracketSide({ side, entries, draft, lockStatus, doublesUsed, onChange, 
                   doublesUsed={doublesUsed}
                   onChange={(update) => onChange(entry.match.id, update)}
                   onToggleDouble={() => onToggleDouble(entry.match.id)}
+                  readOnly={readOnly}
                 />
               );
             })}
@@ -588,17 +593,19 @@ function BracketSide({ side, entries, draft, lockStatus, doublesUsed, onChange, 
   );
 }
 
-function BracketMatchCard({ entry, draft, locked, doublesUsed, onChange, onToggleDouble }: {
+function BracketMatchCard({ entry, draft, locked, doublesUsed, onChange, onToggleDouble, readOnly }: {
   entry: BracketEntry;
   draft?: BracketDraft;
   locked: boolean;
   doublesUsed: number;
   onChange: (update: Partial<BracketDraft>) => void;
   onToggleDouble: () => void;
+  readOnly?: boolean;
 }) {
   const selected = draft?.outcome;
   const isDoubled = draft?.isDoubled ?? false;
   const canDouble = isDoubled || doublesUsed < MAX_DOUBLES;
+  const disabled = locked || !!readOnly;
 
   const isCompleted = entry.match.status === 'COMPLETED';
   const isCorrect = isCompleted && !!selected && (draft?.pointsAwarded ?? 0) > 0;
@@ -607,7 +614,7 @@ function BracketMatchCard({ entry, draft, locked, doublesUsed, onChange, onToggl
   const resultClass = isCorrect ? 'result-correct' : isWrong ? 'result-wrong' : '';
 
   return (
-    <article className={`bracket-match ${locked ? 'locked' : ''} ${isDoubled ? 'doubled' : ''} ${resultClass}`}>
+    <article className={`bracket-match ${disabled ? 'locked' : ''} ${isDoubled ? 'doubled' : ''} ${resultClass}`}>
       <div className="bracket-match-meta">
         <span>#{entry.match.fifa_match_no}</span>
         <span>{formatStage(entry.match.stage)}</span>
@@ -618,7 +625,7 @@ function BracketMatchCard({ entry, draft, locked, doublesUsed, onChange, onToggl
       <button
         type="button"
         className={selected === 'HOME_WIN' ? 'bracket-team selected' : 'bracket-team'}
-        disabled={locked}
+        disabled={disabled}
         onClick={() => onChange({ outcome: 'HOME_WIN' })}
       >
         <span>{entry.homeLabel}</span>
@@ -626,21 +633,23 @@ function BracketMatchCard({ entry, draft, locked, doublesUsed, onChange, onToggl
       <button
         type="button"
         className={selected === 'AWAY_WIN' ? 'bracket-team selected' : 'bracket-team'}
-        disabled={locked}
+        disabled={disabled}
         onClick={() => onChange({ outcome: 'AWAY_WIN' })}
       >
         <span>{entry.awayLabel}</span>
       </button>
 
-      <button
-        type="button"
-        className={`double-toggle ${isDoubled ? 'active' : ''}`}
-        disabled={locked || (!isDoubled && !canDouble)}
-        onClick={onToggleDouble}
-        title={isDoubled ? 'Remove double' : 'Use a double token (2x points if correct)'}
-      >
-        2x {isDoubled ? '\u2713' : ''}
-      </button>
+      {!readOnly && (
+        <button
+          type="button"
+          className={`double-toggle ${isDoubled ? 'active' : ''}`}
+          disabled={locked || (!isDoubled && !canDouble)}
+          onClick={onToggleDouble}
+          title={isDoubled ? 'Remove double' : 'Use a double token (2x points if correct)'}
+        >
+          2x {isDoubled ? '\u2713' : ''}
+        </button>
+      )}
     </article>
   );
 }
@@ -704,6 +713,226 @@ function OutcomeButton({ outcome, label, selected, disabled, onClick }: {
     >
       {label}
     </button>
+  );
+}
+
+// ─── All Brackets Page ───────────────────────────────────────────────────────
+
+function AllBracketsPage({ session }: { session: SessionState }) {
+  const [matches, setMatches] = useState<Match[]>([]);
+  const [leaderboard, setLeaderboard] = useState<BracketLeaderboardRow[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState('');
+  const [draft, setDraft] = useState<Record<string, BracketDraft>>({});
+  const [selectedDisplayName, setSelectedDisplayName] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [bracketLoading, setBracketLoading] = useState(false);
+  const [lockStatus, setLockStatus] = useState<'open' | 'locked'>('open');
+
+  useEffect(() => {
+    async function load() {
+      setError('');
+      try {
+        const [matchResponse, lbResponse] = await Promise.all([
+          getMatches(session.leagueId, session.token),
+          getBracketLeaderboard(session.leagueId, session.token)
+        ]);
+        setMatches(matchResponse.matches);
+        setLeaderboard(lbResponse.leaderboard);
+
+        const r32Matches = matchResponse.matches
+          .filter((m: Match) => m.stage === 'ROUND_OF_32')
+          .sort((a: Match, b: Match) => new Date(a.kickoff_at).getTime() - new Date(b.kickoff_at).getTime());
+
+        if (r32Matches.length >= 2) {
+          const now = Date.now();
+          const secondKickoff = new Date(r32Matches[1].kickoff_at).getTime();
+          if (now >= secondKickoff) setLockStatus('locked');
+          else setLockStatus('open');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load data.');
+      } finally {
+        setLoading(false);
+      }
+    }
+    void load();
+  }, [session.leagueId, session.token]);
+
+  const usersWithPicks = useMemo(
+    () => leaderboard.filter((row) => row.total_picks > 0),
+    [leaderboard]
+  );
+
+  useEffect(() => {
+    if (!selectedUserId || lockStatus !== 'locked') return;
+    let cancelled = false;
+
+    async function fetchBracket() {
+      setBracketLoading(true);
+      setError('');
+      try {
+        const response = await getUserBracket(session.leagueId, selectedUserId, session.token);
+        if (cancelled) return;
+        const nextDraft: Record<string, BracketDraft> = {};
+        for (const bp of response.predictions) {
+          nextDraft[bp.match_id] = {
+            outcome: bp.predicted_outcome,
+            isDoubled: bp.is_doubled === 1,
+            pointsAwarded: bp.points_awarded ?? 0,
+          };
+        }
+        setDraft(nextDraft);
+        setSelectedDisplayName(response.displayName);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load bracket.');
+      } finally {
+        if (!cancelled) setBracketLoading(false);
+      }
+    }
+
+    void fetchBracket();
+    return () => { cancelled = true; };
+  }, [selectedUserId, session.leagueId, session.token, lockStatus]);
+
+  const bracketRounds = useMemo(() => buildBracketRounds(matches, draft), [matches, draft]);
+  const knockoutEntries = useMemo(() => flattenBracketRounds(bracketRounds), [bracketRounds]);
+
+  const selectedRow = usersWithPicks.find((r) => r.user_id === selectedUserId);
+  const completedPicks = knockoutEntries.filter(({ match }) => draft[match.id]?.outcome).length;
+  const doublesUsed = Object.values(draft).filter((d) => d.isDoubled).length;
+
+  const noop = () => {};
+
+  if (loading) return <Loading />;
+
+  if (lockStatus !== 'locked') {
+    return (
+      <section className="panel wide">
+        <p className="eyebrow">Community brackets</p>
+        <h2>All Bracket Predictions</h2>
+        <div className="empty">Bracket predictions will be visible after the bracket deadline passes.</div>
+      </section>
+    );
+  }
+
+  if (usersWithPicks.length === 0) {
+    return (
+      <section className="panel wide">
+        <p className="eyebrow">Community brackets</p>
+        <h2>All Bracket Predictions</h2>
+        <div className="empty">No one has made bracket predictions yet.</div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="bracket-section">
+      <div className="section-header">
+        <div>
+          <p className="eyebrow">Community brackets</p>
+          <h2>All Bracket Predictions</h2>
+        </div>
+        <div className="bracket-actions">
+          <label className="date-picker">
+            View bracket of
+            <select value={selectedUserId} onChange={(e) => setSelectedUserId(e.target.value)}>
+              <option value="">Select a player...</option>
+              {usersWithPicks.map((row) => (
+                <option key={row.user_id} value={row.user_id}>
+                  {row.display_name} ({row.total_points} pts)
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+
+      {error && <div className="error">{error}</div>}
+
+      {!selectedUserId && (
+        <div className="empty">Select a player above to view their bracket predictions.</div>
+      )}
+
+      {selectedUserId && bracketLoading && <Loading />}
+
+      {selectedUserId && !bracketLoading && knockoutEntries.length > 0 && (
+        <>
+          <div className="lock-banner locked">
+            <p><strong>{selectedDisplayName}</strong> &mdash; {completedPicks}/{knockoutEntries.length} picked &middot; {doublesUsed}/{MAX_DOUBLES} doubles &middot; {selectedRow?.total_points ?? 0} pts ({selectedRow?.correct_picks ?? 0} correct, {selectedRow?.wrong_picks ?? 0} wrong)</p>
+          </div>
+
+          <div className="bracket-scroll">
+            <div className="bracket-board">
+              <BracketSide
+                side="left"
+                entries={[
+                  bracketRounds.round32.slice(0, 8),
+                  bracketRounds.round16.slice(0, 4),
+                  bracketRounds.quarters.slice(0, 2),
+                  bracketRounds.semis.slice(0, 1)
+                ]}
+                draft={draft}
+                lockStatus="locked"
+                doublesUsed={doublesUsed}
+                onChange={noop}
+                onToggleDouble={noop}
+                readOnly
+              />
+
+              <div className="final-column">
+                <p className="round-label">Final</p>
+                {bracketRounds.final[0] && (
+                  <BracketMatchCard
+                    entry={bracketRounds.final[0]}
+                    draft={draft[bracketRounds.final[0].match.id]}
+                    locked
+                    doublesUsed={doublesUsed}
+                    onChange={noop}
+                    onToggleDouble={noop}
+                    readOnly
+                  />
+                )}
+                <div className="champion-box">
+                  <span>Champion</span>
+                  <strong>{bracketRounds.final[0] ? selectedWinnerLabel(bracketRounds.final[0], draft) : 'TBD'}</strong>
+                </div>
+                {bracketRounds.thirdPlace[0] && (
+                  <div className="third-place-box">
+                    <p className="round-label">3rd Place</p>
+                    <BracketMatchCard
+                      entry={bracketRounds.thirdPlace[0]}
+                      draft={draft[bracketRounds.thirdPlace[0].match.id]}
+                      locked
+                      doublesUsed={doublesUsed}
+                      onChange={noop}
+                      onToggleDouble={noop}
+                      readOnly
+                    />
+                  </div>
+                )}
+              </div>
+
+              <BracketSide
+                side="right"
+                entries={[
+                  bracketRounds.semis.slice(1, 2),
+                  bracketRounds.quarters.slice(2, 4),
+                  bracketRounds.round16.slice(4, 8),
+                  bracketRounds.round32.slice(8, 16)
+                ]}
+                draft={draft}
+                lockStatus="locked"
+                doublesUsed={doublesUsed}
+                onChange={noop}
+                onToggleDouble={noop}
+                readOnly
+              />
+            </div>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
