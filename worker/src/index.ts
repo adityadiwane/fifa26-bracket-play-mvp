@@ -79,6 +79,11 @@ export default {
         return await listMyBracket(request, env, bracketMe[1]);
       }
 
+      const bracketUser = path.match(/^\/api\/league\/([^/]+)\/bracket\/([^/]+)$/);
+      if (request.method === 'GET' && bracketUser) {
+        return await listUserBracket(request, env, bracketUser[1], bracketUser[2]);
+      }
+
       if (request.method === 'POST' && path === '/api/bracket/save') {
         return await saveBracket(request, env);
       }
@@ -425,6 +430,50 @@ async function listMyBracket(request: Request, env: Env, leagueId: string): Prom
   const doublesUsed = (results ?? []).filter((r: any) => r.is_doubled === 1).length;
 
   return ok({ predictions: results ?? [], doublesUsed, maxDoubles: MAX_DOUBLE_TOKENS }, env);
+}
+
+async function listUserBracket(request: Request, env: Env, leagueId: string, userId: string): Promise<Response> {
+  await requireLeagueSession(request, env, leagueId);
+
+  const lockState = await getBracketLockState(env);
+  if (!lockState.fullyLocked) {
+    throw new AppError('Brackets are not viewable until the bracket deadline passes.', 403);
+  }
+
+  const user = await env.DB.prepare(
+    `SELECT id, display_name FROM users WHERE id = ? AND league_id = ?`
+  ).bind(userId, leagueId).first<{ id: string; display_name: string }>();
+  if (!user) throw new AppError('User not found in this league.', 404);
+
+  const { results } = await env.DB.prepare(
+    `SELECT bp.match_id, bp.predicted_outcome, bp.is_doubled, bp.predicted_winner_team,
+            bp.created_at, bp.updated_at,
+            CASE
+              WHEN m.status = 'COMPLETED'
+               AND bp.predicted_winner_team IS NOT NULL
+               AND bp.predicted_winner_team = CASE m.actual_outcome
+                 WHEN 'HOME_WIN' THEN m.home_team
+                 WHEN 'AWAY_WIN' THEN m.away_team
+               END
+                THEN (CASE m.stage
+                  WHEN 'ROUND_OF_32' THEN 2
+                  WHEN 'ROUND_OF_16' THEN 4
+                  WHEN 'QUARTER_FINAL' THEN 6
+                  WHEN 'SEMI_FINAL' THEN 8
+                  WHEN 'THIRD_PLACE' THEN 8
+                  WHEN 'FINAL' THEN 10
+                  ELSE 2
+                END) * (CASE WHEN bp.is_doubled = 1 THEN 2 ELSE 1 END)
+              ELSE 0
+            END AS points_awarded
+       FROM bracket_predictions bp
+       JOIN matches m ON m.id = bp.match_id
+      WHERE bp.league_id = ? AND bp.user_id = ?`
+  ).bind(leagueId, userId).all();
+
+  const doublesUsed = (results ?? []).filter((r: any) => r.is_doubled === 1).length;
+
+  return ok({ predictions: results ?? [], doublesUsed, maxDoubles: MAX_DOUBLE_TOKENS, displayName: user.display_name }, env);
 }
 
 async function saveBracket(request: Request, env: Env): Promise<Response> {

@@ -117,6 +117,12 @@ export async function saveBracketPredictions(
   }, token);
 }
 
+export async function getUserBracket(leagueId: string, userId: string, token: string) {
+  return request<{ predictions: BracketPrediction[]; doublesUsed: number; maxDoubles: number; displayName: string }>(
+    `/api/league/${leagueId}/bracket/${userId}`, {}, token
+  );
+}
+
 export async function getBracketLeaderboard(leagueId: string, token: string) {
   return request<{ leaderboard: BracketLeaderboardRow[] }>(`/api/league/${leagueId}/leaderboard/bracket`, {}, token);
 }
